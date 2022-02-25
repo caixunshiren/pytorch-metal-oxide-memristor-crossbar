@@ -56,6 +56,9 @@ class StaticMemristor:
         i = i_spacial + self.temporal_variation(v, i_spacial)
         return i
 
+
+class DynamicMemristor(StaticMemristor):
+    pass
 # TODO: Qs for Amirali - T is Celcius or Kelvin? Role of frequency and appropriete value?
 # TODO: Dynamic memristprs
 # TODO: Crossbar static
