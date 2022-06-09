@@ -75,17 +75,16 @@ class DynamicMemristor(StaticMemristor):
 
 
     def get_params(self):
-        assert 3.16 * 10e-6 <= self.g_0 <= 316 * 10e-6, "conductance out of range"
+        assert 3.16e-6 <= self.g_0 <= 316e-6, "conductance out of range"
         if self.g_range[0] <= self.g_0 <= self.g_range[1]:
             return
         # 1. find the appropriate range
         # 2. get params based on range
         for index, row in DYNAMIC_PARAMS.iterrows():
             llimit, rlimit = index.split("-")
-            llimit = float(llimit)*10e-6 # caste type and in us
-            rlimit = float(rlimit)*10e-6 # caste type and in us
+            llimit = float(llimit)*1e-6 # caste type and in us
+            rlimit = float(rlimit)*1e-6 # caste type and in us
             if llimit <= self.g_0 <= rlimit:
-                print('debug')
                 self.g_range = [llimit, rlimit]
                 self.params = row.to_dict()
 
@@ -94,12 +93,14 @@ class DynamicMemristor(StaticMemristor):
         logT = np.log(t_p)
         D_m = self.params["c0_set"] * (1-np.tanh(self.params["c1_set"]*(logT-self.params["c2_set"]))) \
              * (np.tanh(self.params["c3_set"]*V_p-self.params["c4_set"])+1)
-        D_d2d = self.dynamic_d2d_var * D_m * (self.params["d0_set"] + self.params["d1_set"]*logT**2 +
+        D_d2d = self.dynamic_d2d_var * D_m * (self.params["d0_set"] + self.params["d1_set"]*(logT**2) +
                                               self.params["d2_set"]*V_p*logT + self.params["d3_set"]*(V_p**2)*logT +
-                                              self.params["d4_set"]*V_p**3)
+                                              self.params["d4_set"]*(V_p**3))
         self.g_0 += (D_m + D_d2d)
-        if self.g_0 > 316 * 10e-6:
-            self.g_0 = 316 * 10e-6
+        if self.g_0 > 316e-6:
+            self.g_0 = 315e-6
+        if 3.16e-6 > self.g_0:
+            self.g_0 = 3.17e-6
 
     def reset(self, V_p, t_p):
         self.get_params()
@@ -111,10 +112,12 @@ class DynamicMemristor(StaticMemristor):
                                                           V_p ** 2) * logT +
                                               self.params["d4_reset"] * V_p ** 3)
         self.g_0 += (D_m + D_d2d)
-        if 3.16 * 10e-6 > self.g_0:
-            self.g_0 = 3.16 * 10e-6
+        if self.g_0 > 316e-6:
+            self.g_0 = 315e-6
+        if 3.16e-6 > self.g_0:
+            self.g_0 = 3.17e-6
 
-# TODO: Qs for Amirali - T is Celcius or Kelvin? Role of frequency and appropriete value?
-# TODO: Dynamic memristors
+# TODO: Qs for Amirali - T is Celcius or Kelvin? Role of frequency and appropriete value? (Kelvin, 1e8 hz)
+# TODO: Dynamic memristors (DONE)
 # TODO: Crossbar static
 # TODO: Crossbar dynamic
