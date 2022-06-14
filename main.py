@@ -8,8 +8,10 @@ def graph_I_V(n, v_range, g_0, frequency, temperature):
         memristor = StaticMemristor(g_0)
         memristor.calibrate(temperature, frequency)
         I = [memristor.inference(v) for v in np.linspace(v_range[0], v_range[1], 50)]
-        I_ohms_law = [v * g_0 for v in np.linspace(v_range[0], v_range[1], 50)]
+        I_linfit = [v * memristor.g_linfit for v in np.linspace(v_range[0], v_range[1], 50)]
         plt.plot(np.linspace(v_range[0], v_range[1], 50), I, label=f"simulation {j}")
+        plt.plot(np.linspace(v_range[0], v_range[1], 50), I_linfit, label=f"simulation {j} best fit")
+    I_ohms_law = [v * g_0 for v in np.linspace(v_range[0], v_range[1], 50)]
     plt.plot(np.linspace(v_range[0], v_range[1], 50), I_ohms_law, label="Ohm's Law")
     plt.legend()
     plt.show()
@@ -73,7 +75,7 @@ def main():
     print("ideal naive linear estimate:", ideal_i)
     print("ideal naive non-linear estimate:", memristor.noise_free_dc_iv_curve(v))
 
-    graph_I_V(10, [-0.4, 0.4], g_0, frequency, temperature)
+    graph_I_V(2, [-0.4, 0.4], g_0, frequency, temperature)
 
     v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
     t_p = 0.5e-3 # programming pulse duration

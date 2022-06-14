@@ -29,6 +29,7 @@ class StaticMemristor:
         self.u_A3 = None
         self.sigma_A1 = None
         self.sigma_A3 = None
+        self.g_linfit = None  # best fitted conductance
         self.d2d_var = np.random.normal(0, 1, 1).item()
 
     def noise_free_dc_iv_curve(self, v):
@@ -50,6 +51,8 @@ class StaticMemristor:
                         PARAMS['A1']['p3'] * self.g_0 ** 2
         self.sigma_A3 = PARAMS['A3']['p0'] + PARAMS['A3']['p1'] * self.g_0 + PARAMS['A3']['p2'] * self.t + \
                         PARAMS['A3']['p3'] * self.g_0 ** 2 + PARAMS['A3']['p4'] * self.g_0 * self.t
+        self.g_linfit, _, _, _ = np.linalg.lstsq(np.reshape(np.linspace(-0.4, 0.4, 50), [50,1]),
+                                                 [self.inference(v) for v in np.linspace(-0.4, 0.4, 50)])
 
     def inference(self, v):
         """
