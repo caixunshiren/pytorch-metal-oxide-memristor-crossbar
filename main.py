@@ -1,4 +1,6 @@
 from memristor.devices import StaticMemristor, DynamicMemristor
+from memristor.crossbar.model import LineResistanceCrossbar
+import torch
 
 
 def graph_I_V(n, v_range, g_0, frequency, temperature):
@@ -63,26 +65,41 @@ def plot_conductance_multiple(n, iterations, g_0, t_p, v_p, temperature, frequen
     plt.show()
 
 def main():
-    frequency = 1e8  # hz
-    temperature = 273 + 60  # Kelvin
-    g_0 = 50e-6  # S
-    v = 0.3  # V
-    memristor = StaticMemristor(g_0)
-    memristor.calibrate(temperature, frequency)
-    for i in range(10):
-        print(memristor.inference(v))
-    ideal_i = v * g_0
-    print("ideal naive linear estimate:", ideal_i)
-    print("ideal naive non-linear estimate:", memristor.noise_free_dc_iv_curve(v))
+    # frequency = 1e8  # hz
+    # temperature = 273 + 60  # Kelvin
+    # g_0 = 50e-6  # S
+    # v = 0.3  # V
+    # memristor = StaticMemristor(g_0)
+    # memristor.calibrate(temperature, frequency)
+    # for i in range(10):
+    #     print(memristor.inference(v))
+    # ideal_i = v * g_0
+    # print("ideal naive linear estimate:", ideal_i)
+    # print("ideal naive non-linear estimate:", memristor.noise_free_dc_iv_curve(v))
+    #
+    # graph_I_V(2, [-0.4, 0.4], g_0, frequency, temperature)
 
-    graph_I_V(2, [-0.4, 0.4], g_0, frequency, temperature)
+    # v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
+    # t_p = 0.5e-3 # programming pulse duration
+    # g_0 = 65e-6
+    # frequency = 1e8  # hz
+    # temperature = 273 + 60  # Kelvin
+    # plot_conductance_multiple(100, 200, g_0, t_p, v_p, temperature, frequency, OPERATION="SET")
+    torch.set_default_dtype(torch.float64)
 
-    v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
-    t_p = 0.5e-3 # programming pulse duration
-    g_0 = 65e-6
-    frequency = 1e8  # hz
-    temperature = 273 + 60  # Kelvin
-    #plot_conductance_multiple(100, 200, g_0, t_p, v_p, temperature, frequency, OPERATION="SET")
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in':20, 'r_out':20}
+    memristor_model = StaticMemristor
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 60}
+    ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    v_applied = torch.tensor([0.2, 0.3], dtype=torch.float64)
+
+    print("ideal vmm:", crossbar.ideal_vmm(v_applied))
+    print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))
+    print("naive memristive vmm:", crossbar.naive_memristive_vmm(v_applied))
+    print("line resistance memristive vmm:", crossbar.lineres_memristive_vmm(v_applied, iter=1))
+
 
 if __name__ == "__main__":
     main()

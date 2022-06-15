@@ -10,7 +10,7 @@ class LineResistanceCrossbar:
     This class does not:
         Normalize input. So all input should be normalized in the range for the memristor model
             e.g. for the static/dynamic memristor:
-            3.16e-6 to 316e-6 for conductance
+            3.16e-6 to 316e-6 S for conductance
             -0.4 to 0.4 V for inference
         Normalize output.
     """
@@ -23,10 +23,11 @@ class LineResistanceCrossbar:
         self.memristor_model = memristor_model
         self.memristor_params = memristor_params
         self.memristors = [[initialize_memristor(memristor_model, memristor_params, ideal_w[i, j])
-                            for j in ideal_w.shape[1]] for i in ideal_w.shape[0]]
+                            for j in range(ideal_w.shape[1])] for i in range(ideal_w.shape[0])]
         self.ideal_w = ideal_w
         self.n, self.m = ideal_w.shape
-        self.fitted_w = [[self.memristors[i][j].g_linfit for j in ideal_w.shape[1]] for i in ideal_w.shape[0]]
+        self.fitted_w = torch.tensor([[self.memristors[i][j].g_linfit for j in range(ideal_w.shape[1])]
+                                      for i in range(ideal_w.shape[0])]).squeeze()
         self.cache = {}  # cache useful statistics to avoid redundant calculations
 
         # conductance of the word and bit lines.
@@ -57,7 +58,16 @@ class LineResistanceCrossbar:
         """
         return torch.matmul(self.ideal_w, v)
 
-    def ideal_memristive_vmm(self, v):
+    def naive_linear_memristive_vmm(self, v):
+        """
+        idealized vmm using fitted conductance of the memristors
+        dims:
+            v: mx1
+            fitted_w: nxm
+        """
+        return torch.matmul(self.fitted_w, v)
+
+    def naive_memristive_vmm(self, v):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -65,28 +75,44 @@ class LineResistanceCrossbar:
             crossbar: nxm
         """
         def mac_op(a1, a2):
-            torch.sum(torch.tensor([a1[j].inference(a2[j]) for j in range(len(a1))]))
+            return torch.sum(torch.tensor([a1[j].inference(a2[j]) for j in range(len(a1))]))
         ret = torch.zeros([self.ideal_w.shape[0]])
         for i, row in enumerate(self.memristors):
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_applied):
+    def lineres_memristive_vmm(self, v_applied, iter=1):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
             v_dd: mx1
             ideal_w: nxm
+        :param v_applied: mx1 word line applied analog voltage
+        :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
+                          iter = 2 is second order... and so on.
+        :return: nx1 analog current vector
         """
-        pass
+        W = self.fitted_w
+        V_crossbar = self.solve_v(W, v_applied)
+        for i in range(iter):
+            V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
+            V_wl, V_bl = torch.t(V_crossbar[0,:,:]), torch.t(V_crossbar[1,:,:])  # now nxm
+            V_diff = V_bl - V_wl
+            W = torch.tensor([[self.memristors[i][j].inference(V_diff[i,j]) for j in range(self.m)]
+                              for i in range(self.n)])/V_diff
+            V_crossbar = self.solve_v(W, v_applied)
+        V_wl, V_bl = torch.t(V_crossbar[0, :, :]), torch.t(V_crossbar[1, :, :])  # now nxm
+        V_diff = V_bl - V_wl
+        I = V_diff*W # nxm
+        return torch.sum(I, dim=1)
 
     def solve_v(self, W, v_applied):
         """
         m word lines and n bit lines
         let M = [A, B; C, D]
         solve MV=E
-        :param W: nxm matrix of conductances, type torch tensor
-        :param v_applied: mx1 wordline applied analog voltage
+        :param W: nxm matrix of conductance, type torch tensor
+        :param v_applied: mx1 word line applied analog voltage
         :return V: 2mn x 1 vector contains voltages of the word line and bit line
         """
         A = self.make_A(W)
@@ -171,6 +197,6 @@ def initialize_memristor(memristor_model, memristor_params, g_0):
     elif memristor_model == DynamicMemristor:
         memristor = DynamicMemristor(g_0)
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
-        memristor
+        return memristor
     else:
         raise Exception('Invalid memristor model')
