@@ -81,7 +81,7 @@ class LineResistanceCrossbar:
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_applied, iter=1):
+    def lineres_memristive_vmm(self, v_applied, iter=1, crossbar_cache=True):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -96,13 +96,18 @@ class LineResistanceCrossbar:
         V_crossbar = self.solve_v(W, v_applied)
         for i in range(iter):
             V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
-            V_wl, V_bl = torch.t(V_crossbar[0,:,:]), torch.t(V_crossbar[1,:,:])  # now nxm
-            V_diff = V_bl - V_wl
+            #print("debug", V_crossbar.shape, V_crossbar)
+            V_wl, V_bl = torch.t(V_crossbar[0,:,:].squeeze()), torch.t(V_crossbar[1,:,:].squeeze())  # now nxm
+            V_diff = V_wl - V_bl
             W = torch.tensor([[self.memristors[i][j].inference(V_diff[i,j]) for j in range(self.m)]
                               for i in range(self.n)])/V_diff
             V_crossbar = self.solve_v(W, v_applied)
-        V_wl, V_bl = torch.t(V_crossbar[0, :, :]), torch.t(V_crossbar[1, :, :])  # now nxm
-        V_diff = V_bl - V_wl
+        V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
+        V_wl, V_bl = torch.t(V_crossbar[0, :, :].squeeze()), torch.t(V_crossbar[1, :, :].squeeze())  # now nxm
+        V_diff = V_wl - V_bl
+        if crossbar_cache:
+            self.cache["V_wl"] = V_wl
+            self.cache["V_bl"] = V_bl
         I = V_diff*W # nxm
         return torch.sum(I, dim=1)
 
@@ -156,7 +161,7 @@ class LineResistanceCrossbar:
         def makec(j):
             return torch.zeros(m, m*n).index_put((torch.arange(m), torch.arange(m) * n + j), W_t[:, j])
 
-        torch.cat([makec(j) for j in range(n)],dim=0)
+        return torch.cat([makec(j) for j in range(n)],dim=0)
 
     def make_D(self, W):
         W_t = torch.t(W)

@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+
 from memristor.devices import StaticMemristor, DynamicMemristor
 from memristor.crossbar.model import LineResistanceCrossbar
 import torch
@@ -64,6 +66,20 @@ def plot_conductance_multiple(n, iterations, g_0, t_p, v_p, temperature, frequen
     plt.ylabel("conductance (uS)")
     plt.show()
 
+
+def plot_crossbar(crossbar, v_applied):
+    # plot output current
+    out = torch.stack([crossbar.ideal_vmm(v_applied), crossbar.naive_linear_memristive_vmm(v_applied),
+                        crossbar.naive_memristive_vmm(v_applied), crossbar.lineres_memristive_vmm(v_applied, iter=1)],
+                      dim=1)
+    out = torch.t(out)
+    plt.matshow(out)
+    plt.show()
+
+    plt.matshow(crossbar.cache["V_wl"]-crossbar.cache["V_bl"])
+    plt.show()
+
+
 def main():
     # frequency = 1e8  # hz
     # temperature = 273 + 60  # Kelvin
@@ -87,18 +103,21 @@ def main():
     # plot_conductance_multiple(100, 200, g_0, t_p, v_p, temperature, frequency, OPERATION="SET")
     torch.set_default_dtype(torch.float64)
 
-    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in':20, 'r_out':20}
+    crossbar_params = {'r_wl': 2, 'r_bl': 2, 'r_in':2, 'r_out':2}
     memristor_model = StaticMemristor
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 60}
-    ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+    #ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+    ideal_w = torch.FloatTensor(64, 32).uniform_(10, 300).double()*1e-6
 
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
-    v_applied = torch.tensor([0.2, 0.3], dtype=torch.float64)
+    #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
+    v_applied = torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()*1e-6
 
-    print("ideal vmm:", crossbar.ideal_vmm(v_applied))
-    print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))
-    print("naive memristive vmm:", crossbar.naive_memristive_vmm(v_applied))
-    print("line resistance memristive vmm:", crossbar.lineres_memristive_vmm(v_applied, iter=1))
+    #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
+    #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))
+    #print("naive memristive vmm:", crossbar.naive_memristive_vmm(v_applied))
+    #print("line resistance memristive vmm:", crossbar.lineres_memristive_vmm(v_applied, iter=1))
+    plot_crossbar(crossbar, v_applied)
 
 
 if __name__ == "__main__":
