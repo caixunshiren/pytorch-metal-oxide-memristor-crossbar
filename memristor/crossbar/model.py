@@ -30,6 +30,8 @@ class LineResistanceCrossbar:
                                       for i in range(ideal_w.shape[0])]).squeeze()
         self.cache = {}  # cache useful statistics to avoid redundant calculations
 
+        self.OP_MODE = crossbar_params["OP_MODE"]
+
         # conductance of the word and bit lines.
         self.g_wl = torch.Tensor((1 / crossbar_params["r_wl"],))
         self.g_bl = torch.Tensor((1 / crossbar_params["r_bl"],))
@@ -38,11 +40,22 @@ class LineResistanceCrossbar:
         self.r_in = crossbar_params["r_in"]
         self.r_out = crossbar_params["r_out"]
 
-        # line conductance of the sensor lines
-        self.g_s_wl_in = torch.ones(self.m) / self.r_in
-        self.g_s_wl_out = torch.ones(self.m) * 1e-15  # floating
-        self.g_s_bl_in = torch.ones(self.n) * 1e-15  # floating
-        self.g_s_bl_out = torch.ones(self.n) / self.r_out
+        if self.OP_MODE == 'SINGLE_SIDE':
+            # line conductance of the sensor lines
+            self.g_s_wl_in = torch.ones(self.m) / self.r_in
+            self.g_s_wl_out = torch.ones(self.m) * 1e-15  # floating
+            self.g_s_bl_in = torch.ones(self.n) * 1e-15  # floating
+            self.g_s_bl_out = torch.ones(self.n) / self.r_out
+
+        elif self.OP_MODE == 'DOUBLE_SIDE':
+            # line conductance of the sensor lines
+            self.g_s_wl_in = torch.ones(self.m) / self.r_in
+            self.g_s_wl_out = torch.ones(self.m) / self.r_in
+            self.g_s_bl_in = torch.ones(self.n) / self.r_out
+            self.g_s_bl_out = torch.ones(self.n) / self.r_out
+
+        else:
+            raise ValueError("UNKOWN OPERATION MODE")
 
         # WL & BL voltages that are not the signal, assume bl_in, wl_out are tied low and bl_out is tied to 1 V.
         self.v_bl_in = torch.zeros(self.n)
@@ -81,19 +94,20 @@ class LineResistanceCrossbar:
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_applied, iter=1, crossbar_cache=True):
+    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1, crossbar_cache=True):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
             v_dd: mx1
             ideal_w: nxm
-        :param v_applied: mx1 word line applied analog voltage
+        :param v_wl_applied: mx1 word line applied analog voltage
+        :param v_bl_applied: nx1 bit line applied analog voltage
         :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
                           iter = 2 is second order... and so on.
         :return: nx1 analog current vector
         """
         W = self.fitted_w
-        V_crossbar = self.solve_v(W, v_applied)
+        V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
         for i in range(iter):
             V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
             #print("debug", V_crossbar.shape, V_crossbar)
@@ -101,7 +115,7 @@ class LineResistanceCrossbar:
             V_diff = V_wl - V_bl
             W = torch.tensor([[self.memristors[i][j].inference(V_diff[i,j]) for j in range(self.m)]
                               for i in range(self.n)])/V_diff
-            V_crossbar = self.solve_v(W, v_applied)
+            V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
         V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
         V_wl, V_bl = torch.t(V_crossbar[0, :, :].squeeze()), torch.t(V_crossbar[1, :, :].squeeze())  # now nxm
         V_diff = V_wl - V_bl
@@ -111,30 +125,38 @@ class LineResistanceCrossbar:
         I = V_diff*W # nxm
         return torch.sum(I, dim=1)
 
-    def solve_v(self, W, v_applied):
+    def solve_v(self, W, v_wl_applied, v_bl_applied):
         """
         m word lines and n bit lines
         let M = [A, B; C, D]
         solve MV=E
         :param W: nxm matrix of conductance, type torch tensor
-        :param v_applied: mx1 word line applied analog voltage
+        :param v_wl_applied: mx1 word line applied analog voltage
+        :param v_bl_applied: nx1 bit line applied analog voltage
         :return V: 2mn x 1 vector contains voltages of the word line and bit line
         """
         A = self.make_A(W)
         B = self.make_B(W)
         C = self.make_C(W)
         D = self.make_D(W)
-        E = self.make_E(v_applied)
+        E = self.make_E(v_wl_applied, v_bl_applied)
         M = torch.cat((torch.cat((A, B), 1), torch.cat((C, D), 1)), 0)
         M_inv = torch.inverse(M)
         self.cache["M_inv"] = M_inv
         return torch.matmul(M_inv, E)
 
-    def make_E(self, v_applied):
+    def make_E(self, v_wl_applied, v_bl_applied):
         m, n = self.m, self.n
-        E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(n-2), (-self.v_bl_out[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(m)])
-        E_W = torch.cat([torch.cat(((v_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(m-2), (self.v_wl_out[i] * self.g_s_wl_out[i]).view(1))) for i in range(n)]).unsqueeze(1)
-        return torch.cat((E_W, E_B))
+        if self.OP_MODE == 'SINGLE_SIDE':
+            E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
+            E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (self.v_wl_out[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
+            return torch.cat((E_W, E_B))
+        elif self.OP_MODE == 'DOUBLE_SIDE':
+            E_B = torch.cat([torch.cat(((-v_bl_applied[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
+            E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
+            return torch.cat((E_W, E_B))
+        else:
+            raise ValueError('UNKOWN OPERATION MODE')
 
     def make_A(self, W):
         W_t = torch.t(W)
