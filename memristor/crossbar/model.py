@@ -40,18 +40,25 @@ class LineResistanceCrossbar:
         self.r_in = crossbar_params["r_in"]
         self.r_out = crossbar_params["r_out"]
 
-        if self.OP_MODE == 'SINGLE_SIDE':
+        if self.OP_MODE == 'SINGLE_SIDE' or self.OP_MODE == '|_':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) * 1e-15  # floating
             self.g_s_bl_in = torch.ones(self.n) * 1e-15  # floating
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
-        elif self.OP_MODE == 'DOUBLE_SIDE':
+        elif self.OP_MODE == 'DOUBLE_SIDE' or self.OP_MODE == '|=|':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) / self.r_in
             self.g_s_bl_in = torch.ones(self.n) / self.r_out
+            self.g_s_bl_out = torch.ones(self.n) / self.r_out
+
+        elif self.OP_MODE == 'THREE_QUATER_SIDE' or self.OP_MODE == '|_|':
+            # line conductance of the sensor lines
+            self.g_s_wl_in = torch.ones(self.m) / self.r_in
+            self.g_s_wl_out = torch.ones(self.m) / self.r_in
+            self.g_s_bl_in = torch.ones(self.n) * 1e-15
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
         else:
@@ -147,12 +154,16 @@ class LineResistanceCrossbar:
 
     def make_E(self, v_wl_applied, v_bl_applied):
         m, n = self.m, self.n
-        if self.OP_MODE == 'SINGLE_SIDE':
+        if self.OP_MODE == 'SINGLE_SIDE' or self.OP_MODE == '|_':
             E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (self.v_wl_out[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
-        elif self.OP_MODE == 'DOUBLE_SIDE':
+        elif self.OP_MODE == 'DOUBLE_SIDE' or self.OP_MODE == '|=|':
             E_B = torch.cat([torch.cat(((-v_bl_applied[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
+            E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
+            return torch.cat((E_W, E_B))
+        elif self.OP_MODE == 'THREE-QUATER_SIDE' or self.OP_MODE == '|_|':
+            E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
         else:
@@ -182,6 +193,10 @@ class LineResistanceCrossbar:
 
         def makec(j):
             return torch.zeros(m, m*n).index_put((torch.arange(m), torch.arange(m) * n + j), W_t[:, j])
+            # c = torch.zeros(m, m*n)
+            # for i in range(m):
+            #     c[i, n*i+j] = W_t[i, j]
+            # return c
 
         return torch.cat([makec(j) for j in range(n)],dim=0)
 
@@ -196,14 +211,14 @@ class LineResistanceCrossbar:
             d[i, j] = -self.g_s_bl_in[j] - self.g_bl - W_t[i, j]
             d[i, n * (i + 1) + j] = self.g_bl
 
-            for i in range(1, m):
+            for i in range(1, m-1):
                 d[i, n * (i - 1) + j] = self.g_bl
                 d[i, n * i + j] = -self.g_bl - W_t[i, j] - self.g_bl
-                d[i, j] = self.g_bl
+                d[i, n*(i+1)+j] = self.g_bl
 
             i = m - 1
             d[i, n * (i - 1) + j] = self.g_bl
-            d[i, n * i + j] = -self.g_s_bl_out[j] - W_t[i, j] - self.g_bl
+            d[i, n * (i-0) + j] = -self.g_s_bl_out[j] - W_t[i, j] - self.g_bl
 
             return d
 
