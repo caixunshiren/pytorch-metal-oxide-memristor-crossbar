@@ -152,12 +152,12 @@ def fig1():
 
 
 def fig2():
-    v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
+    v_p = -1.2 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
     t_p = 0.5e-3 # programming pulse duration
-    g_0 = 65e-6
+    g_0 = 200e-6
     frequency = 1e8  # hz
     temperature = 273 + 60  # Kelvin
-    plot_conductance_multiple(1000, 30, g_0, t_p, v_p, temperature, frequency, OPERATION="SET")
+    plot_conductance_multiple(20, 100, g_0, t_p, v_p, temperature, frequency, OPERATION="RESET")
 
 
 def fig3():
@@ -167,11 +167,11 @@ def fig3():
     memristor_model = StaticMemristor
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 60}
     #ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
-    ideal_w = torch.FloatTensor(64, 32).uniform_(10, 300).double()*1e-6
+    ideal_w = torch.FloatTensor(32, 32).uniform_(10, 300).double()*1e-6
 
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
     #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
-    v_applied = torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
+    v_applied = 0.4*torch.ones(32,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
 
     #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
     #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))

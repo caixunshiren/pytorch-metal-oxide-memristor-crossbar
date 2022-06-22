@@ -132,8 +132,8 @@ class LineResistanceCrossbar:
 
     def make_E(self, v_applied):
         m, n = self.m, self.n
-        E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(n-2), (-self.v_bl_in[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(m)])
-        E_W = torch.cat([torch.cat(((v_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (self.v_wl_out[i].view(1) * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
+        E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(n-2), (-self.v_bl_out[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(m)])
+        E_W = torch.cat([torch.cat(((v_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(m-2), (self.v_wl_out[i] * self.g_s_wl_out[i]).view(1))) for i in range(n)]).unsqueeze(1)
         return torch.cat((E_W, E_B))
 
     def make_A(self, W):
