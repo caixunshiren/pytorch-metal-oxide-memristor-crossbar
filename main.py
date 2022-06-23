@@ -136,7 +136,7 @@ def plot_crossbar(crossbar, v_wl_applied, v_bl_applied):
     plt.show()
 
 def plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied):
-    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=1)
+    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=0)
     M = torch.t(crossbar.cache["V_wl"]-crossbar.cache["V_bl"])
     im = plt.imshow(M,
                     interpolation='none', aspect='equal')
@@ -210,16 +210,16 @@ def fig2():
 def fig3():
     torch.set_default_dtype(torch.float64)
 
-    crossbar_params = {'r_wl': 15, 'r_bl': 15, 'r_in':10, 'r_out':10, 'OP_MODE':'|_|'}
+    crossbar_params = {'r_wl': 10, 'r_bl': 10, 'r_in':10, 'r_out':10, 'OP_MODE':'|_|'}
     memristor_model = StaticMemristor
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
     #ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
-    ideal_w = torch.FloatTensor(64, 16).uniform_(10, 300).double()*1e-6
+    ideal_w = torch.FloatTensor(48, 16).uniform_(10, 300).double()*1e-6
 
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
     #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
-    v_wl_applied = 0*torch.ones(16,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
-    v_bl_applied = 0.4*torch.ones(64,)#torch.zeros(32, )
+    v_wl_applied = 1.5*torch.ones(16,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
+    v_bl_applied = 0*torch.ones(48,)#torch.zeros(32, )
 
     #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
     #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))

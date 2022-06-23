@@ -36,15 +36,16 @@ class LineResistanceCrossbar:
         self.g_wl = torch.Tensor((1 / crossbar_params["r_wl"],))
         self.g_bl = torch.Tensor((1 / crossbar_params["r_bl"],))
 
-        # WL & BL resistances
+        # WL & BL resistances and floating conductance
         self.r_in = crossbar_params["r_in"]
         self.r_out = crossbar_params["r_out"]
+        self.g_floating = 1e-15
 
         if self.OP_MODE == 'SINGLE_SIDE' or self.OP_MODE == '|_':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
-            self.g_s_wl_out = torch.ones(self.m) * 1e-15  # floating
-            self.g_s_bl_in = torch.ones(self.n) * 1e-15  # floating
+            self.g_s_wl_out = torch.ones(self.m) * self.g_floating  # floating
+            self.g_s_bl_in = torch.ones(self.n) * self.g_floating  # floating
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
         elif self.OP_MODE == 'DOUBLE_SIDE' or self.OP_MODE == '|=|':
@@ -58,7 +59,7 @@ class LineResistanceCrossbar:
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) / self.r_in
-            self.g_s_bl_in = torch.ones(self.n) * 1e-15
+            self.g_s_bl_in = torch.ones(self.n) * self.g_floating
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
         else:
