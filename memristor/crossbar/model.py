@@ -1,4 +1,4 @@
-from ..devices import StaticMemristor, DynamicMemristor
+from ..devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange
 import torch
 import numpy as np
 
@@ -30,7 +30,7 @@ class LineResistanceCrossbar:
                                       for i in range(ideal_w.shape[0])]).squeeze()
         self.cache = {}  # cache useful statistics to avoid redundant calculations
 
-        self.OP_MODE = crossbar_params["OP_MODE"]
+        self.V_SOURCE_MODE = crossbar_params["V_SOURCE_MODE"]
 
         # conductance of the word and bit lines.
         self.g_wl = torch.Tensor((1 / crossbar_params["r_wl"],))
@@ -41,21 +41,21 @@ class LineResistanceCrossbar:
         self.r_out = crossbar_params["r_out"]
         self.g_floating = 1e-15
 
-        if self.OP_MODE == 'SINGLE_SIDE' or self.OP_MODE == '|_':
+        if self.V_SOURCE_MODE == 'SINGLE_SIDE' or self.V_SOURCE_MODE == '|_':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) * self.g_floating  # floating
             self.g_s_bl_in = torch.ones(self.n) * self.g_floating  # floating
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
-        elif self.OP_MODE == 'DOUBLE_SIDE' or self.OP_MODE == '|=|':
+        elif self.V_SOURCE_MODE == 'DOUBLE_SIDE' or self.V_SOURCE_MODE == '|=|':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) / self.r_in
             self.g_s_bl_in = torch.ones(self.n) / self.r_out
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
-        elif self.OP_MODE == 'THREE_QUATER_SIDE' or self.OP_MODE == '|_|':
+        elif self.V_SOURCE_MODE == 'THREE_QUATER_SIDE' or self.V_SOURCE_MODE == '|_|':
             # line conductance of the sensor lines
             self.g_s_wl_in = torch.ones(self.m) / self.r_in
             self.g_s_wl_out = torch.ones(self.m) / self.r_in
@@ -69,6 +69,20 @@ class LineResistanceCrossbar:
         self.v_bl_in = torch.zeros(self.n)
         self.v_bl_out = torch.zeros(self.n)
         self.v_wl_out = torch.zeros(self.m)
+
+    def recalibrate(self, i, j):
+        """
+        this function should be called every time the i,j th memristor get programmed
+        :return:
+        """
+        self.memristors[i][j] = calibrate_memristor(self.memristor_model, self.memristors[i][j], self.memristor_params)
+        self.ideal_w[i,j] = torch.tensor(self.memristors[i][j].g_0)
+        self.fitted_w[i,j] = torch.tensor(self.memristors[i][j].g_linfit)
+
+    def recalibrate_all(self):
+        for i in range(self.n):
+            for j in range(self.m):
+                self.recalibrate(i,j)
 
     def ideal_vmm(self, v):
         """
@@ -102,7 +116,7 @@ class LineResistanceCrossbar:
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1, crossbar_cache=True):
+    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1, crossbar_cache=True, cap=True):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -112,6 +126,8 @@ class LineResistanceCrossbar:
         :param v_bl_applied: nx1 bit line applied analog voltage
         :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
                           iter = 2 is second order... and so on.
+        :param crossbar_cache: whether cache useful statistics
+        :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
         :return: nx1 analog current vector
         """
         W = self.fitted_w
@@ -121,6 +137,8 @@ class LineResistanceCrossbar:
             #print("debug", V_crossbar.shape, V_crossbar)
             V_wl, V_bl = torch.t(V_crossbar[0,:,:].squeeze()), torch.t(V_crossbar[1,:,:].squeeze())  # now nxm
             V_diff = V_wl - V_bl
+            if cap:
+                V_diff = torch.clamp(V_diff, min=-0.4, max=0.4)
             W = torch.tensor([[self.memristors[i][j].inference(V_diff[i,j]) for j in range(self.m)]
                               for i in range(self.n)])/V_diff
             V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
@@ -155,15 +173,15 @@ class LineResistanceCrossbar:
 
     def make_E(self, v_wl_applied, v_bl_applied):
         m, n = self.m, self.n
-        if self.OP_MODE == 'SINGLE_SIDE' or self.OP_MODE == '|_':
+        if self.V_SOURCE_MODE == 'SINGLE_SIDE' or self.V_SOURCE_MODE == '|_':
             E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (self.v_wl_out[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
-        elif self.OP_MODE == 'DOUBLE_SIDE' or self.OP_MODE == '|=|':
+        elif self.V_SOURCE_MODE == 'DOUBLE_SIDE' or self.V_SOURCE_MODE == '|=|':
             E_B = torch.cat([torch.cat(((-v_bl_applied[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
-        elif self.OP_MODE == 'THREE-QUATER_SIDE' or self.OP_MODE == '|_|':
+        elif self.V_SOURCE_MODE == 'THREE-QUATER_SIDE' or self.V_SOURCE_MODE == '|_|':
             E_B = torch.cat([torch.cat(((-self.v_bl_in[i] * self.g_s_bl_in[i]).view(1), torch.zeros(m-2), (-v_bl_applied[i] * self.g_s_bl_out[i]).view(1))).unsqueeze(1) for i in range(n)])
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
@@ -225,6 +243,49 @@ class LineResistanceCrossbar:
 
         return torch.cat([maked(j) for j in range(0,n)], dim=0)
 
+    def lineres_memristive_programming(self, v_wl_applied, v_bl_applied, pulse_dur, iter=1, crossbar_cache=True, cap=True):
+        """
+        vmm with non-ideal memristor inference and ideal crossbar
+        dims:
+            v_dd: mx1
+            ideal_w: nxm
+        :param v_wl_applied: mx1 word line applied analog voltage
+        :param v_bl_applied: nx1 bit line applied analog voltage
+        :param pulse_dur: duration of the pulse in seconds
+        :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
+                          iter = 2 is second order... and so on.
+        :param crossbar_cache: whether cache useful statistics
+        :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
+        :return: nx1 analog current vector
+        """
+        if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange:
+            raise TypeError(self.memristor_model+' is not a programmable memristor type')
+        W = self.fitted_w
+        V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
+        for i in range(iter):
+            V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
+            # print("debug", V_crossbar.shape, V_crossbar)
+            V_wl, V_bl = torch.t(V_crossbar[0, :, :].squeeze()), torch.t(V_crossbar[1, :, :].squeeze())  # now nxm
+            V_diff = V_wl - V_bl
+            if cap:
+                V_diff = torch.clamp(V_diff, min=-0.4, max=0.4)
+            W = torch.tensor([[self.memristors[i][j].inference(V_diff[i, j]) for j in range(self.m)]
+                              for i in range(self.n)]) / V_diff
+            V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
+        V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
+        V_wl, V_bl = torch.t(V_crossbar[0, :, :].squeeze()), torch.t(V_crossbar[1, :, :].squeeze())  # now nxm
+        V_diff = V_wl - V_bl
+        for i in range(self.n):
+            for j in range(self.m):
+                if V_diff[i,j] > 0:
+                    self.memristors[i][j].set(V_diff[i,j], pulse_dur)
+                else:
+                    self.memristors[i][j].reset(V_diff[i, j], pulse_dur)
+                self.recalibrate(i,j)  # recalibrate the memristor at index i,j
+        if crossbar_cache:
+            self.cache["V_wl"] = V_wl
+            self.cache["V_bl"] = V_bl
+
 
 def initialize_memristor(memristor_model, memristor_params, g_0):
     """
@@ -241,5 +302,27 @@ def initialize_memristor(memristor_model, memristor_params, g_0):
         memristor = DynamicMemristor(g_0)
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
         return memristor
+    elif memristor_model == DynamicMemristorFreeRange:
+        memristor = DynamicMemristor(g_0)
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+        return memristor
     else:
-        raise Exception('Invalid memristor model')
+        raise TypeError('Invalid memristor model')
+
+
+def calibrate_memristor(memristor_model, memristor, memristor_params):
+    """
+    :param memristor_model: model to use
+    :param memristor_params: parameter
+    :param g_0: initial conductance
+    :return: an unique calibrated memristor
+    """
+    if memristor_model == StaticMemristor:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    elif memristor_model == DynamicMemristor:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    elif memristor_model == DynamicMemristorFreeRange:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    else:
+        raise TypeError('Invalid memristor model')
+    return memristor

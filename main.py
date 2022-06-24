@@ -136,7 +136,7 @@ def plot_crossbar(crossbar, v_wl_applied, v_bl_applied):
     plt.show()
 
 def plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied):
-    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=0)
+    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=1)
     M = torch.t(crossbar.cache["V_wl"]-crossbar.cache["V_bl"])
     im = plt.imshow(M,
                     interpolation='none', aspect='equal')
@@ -182,6 +182,55 @@ def plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied):
     # plt.grid(visible=True)
     plt.show()
 
+
+def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter):
+    #crossbar conductance heatmap
+    # idea conductance
+    plt.matshow(torch.t(crossbar.ideal_w))
+    plt.title("ideal conductance before programming")
+    plt.colorbar()
+    plt.show()
+    # best fit conductance
+    plt.matshow(torch.t(crossbar.fitted_w))
+    plt.title("fitted conductance before programming")
+    plt.colorbar()
+    plt.show()
+
+    ideal_w_hist=[torch.clone(crossbar.ideal_w).view(-1)]
+    fitted_w_hist=[torch.clone(crossbar.fitted_w).view(-1)]
+    for i in range(iter):
+        #  program the crossbar
+        crossbar.lineres_memristive_programming(v_wl_applied, v_bl_applied, t_p)
+        ideal_w_hist.append(torch.clone(crossbar.ideal_w).view(-1))
+        fitted_w_hist.append(torch.clone(crossbar.fitted_w).view(-1))
+
+    #crossbar conductance heatmap
+    # idea conductance
+    plt.matshow(torch.t(crossbar.ideal_w))
+    plt.title("ideal conductance after programming")
+    plt.colorbar()
+    plt.show()
+    # best fit conductance
+    plt.matshow(torch.t(crossbar.fitted_w))
+    plt.title("fitted conductance after programming")
+    plt.colorbar()
+    plt.show()
+
+    # conductance change history
+    #print(ideal_w_hist)
+    ideal_w_hist = torch.stack(ideal_w_hist, dim=1)
+    fitted_w_hist = torch.stack(fitted_w_hist, dim=1)
+    #print(ideal_w_hist)
+    for i in range(ideal_w_hist.shape[0]):
+        plt.plot(range(iter+1),ideal_w_hist[i,:])
+    plt.title("ideal conductance change")
+    plt.show()
+
+    for i in range(fitted_w_hist.shape[0]):
+        plt.plot(range(iter+1),fitted_w_hist[i,:])
+    plt.title("fitted conductance change")
+    plt.show()
+
 def fig1():
     frequency = 1e8  # hz
     temperature = 273 + 60  # Kelvin
@@ -199,18 +248,18 @@ def fig1():
 
 
 def fig2():
-    v_p = -1.2 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
+    v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V]
     t_p = 0.5e-3 # programming pulse duration
-    g_0 = 200e-6
+    g_0 = 60e-6
     frequency = 1e8  # hz
     temperature = 273 + 60  # Kelvin
-    plot_conductance_multiple(20, 100, g_0, t_p, v_p, temperature, frequency, OPERATION="RESET")
+    plot_conductance_multiple(20, 100, g_0, t_p, v_p, temperature, frequency, OPERATION="SET")
 
 
 def fig3():
     torch.set_default_dtype(torch.float64)
 
-    crossbar_params = {'r_wl': 10, 'r_bl': 10, 'r_in':10, 'r_out':10, 'OP_MODE':'|_|'}
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in':10, 'r_out':10, 'V_SOURCE_MODE':'|=|'}
     memristor_model = StaticMemristor
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
     #ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
@@ -218,8 +267,8 @@ def fig3():
 
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
     #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
-    v_wl_applied = 1.5*torch.ones(16,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
-    v_bl_applied = 0*torch.ones(48,)#torch.zeros(32, )
+    v_wl_applied = 0*torch.ones(16,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
+    v_bl_applied = torch.concat([torch.linspace(1.5, 2.5,16), 2.5*torch.ones(16,),torch.linspace(2.5, 1.5,16)], dim=0) #1.7*torch.ones(48,)#torch.zeros(32, )
 
     #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
     #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))
@@ -228,8 +277,29 @@ def fig3():
     plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied)
 
 
+def fig4():
+    torch.set_default_dtype(torch.float64)
+
+    crossbar_params = {'r_wl': 10, 'r_bl': 10, 'r_in':10, 'r_out':10, 'V_SOURCE_MODE':'|=|'}
+    memristor_model = DynamicMemristorFreeRange
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    #ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+    #ideal_w = torch.FloatTensor(48, 16).uniform_(10, 300).double()*1e-6
+    ideal_w = 200*torch.ones(48, 16)*1e-6
+
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
+    v_wl_applied = 0*torch.ones(16,)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
+    #v_bl_applied = 0.4*torch.ones(48,)#torch.zeros(32, )
+    v_bl_applied = torch.concat([torch.linspace(1.5, 2.5,16), 2.5*torch.ones(16,),torch.linspace(2.5, 1.5,16)], dim=0)
+    t_p = 0.5e-3 # programming pulse duration
+    iter = 20
+
+    plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter)
+
+
 def main():
-    fig3()
+    fig4()
 
 
 if __name__ == "__main__":
