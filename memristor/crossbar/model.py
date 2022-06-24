@@ -75,8 +75,9 @@ class LineResistanceCrossbar:
         this function should be called every time the i,j th memristor get programmed
         :return:
         """
-        self.ideal_w[i,j] = self.memristors[i][j].g_0
-        self.fitted_w[i,j] = self.memristors[i][j].g_linfit
+        self.memristors[i][j] = calibrate_memristor(self.memristor_model, self.memristors[i][j], self.memristor_params)
+        self.ideal_w[i,j] = torch.tensor(self.memristors[i][j].g_0)
+        self.fitted_w[i,j] = torch.tensor(self.memristors[i][j].g_linfit)
 
     def recalibrate_all(self):
         for i in range(self.n):
@@ -307,3 +308,21 @@ def initialize_memristor(memristor_model, memristor_params, g_0):
         return memristor
     else:
         raise TypeError('Invalid memristor model')
+
+
+def calibrate_memristor(memristor_model, memristor, memristor_params):
+    """
+    :param memristor_model: model to use
+    :param memristor_params: parameter
+    :param g_0: initial conductance
+    :return: an unique calibrated memristor
+    """
+    if memristor_model == StaticMemristor:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    elif memristor_model == DynamicMemristor:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    elif memristor_model == DynamicMemristorFreeRange:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    else:
+        raise TypeError('Invalid memristor model')
+    return memristor
