@@ -1,4 +1,4 @@
-from ..devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange
+from ..devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange, DynamicMemristorStuck
 import torch
 import numpy as np
 
@@ -303,7 +303,11 @@ def initialize_memristor(memristor_model, memristor_params, g_0):
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
         return memristor
     elif memristor_model == DynamicMemristorFreeRange:
-        memristor = DynamicMemristor(g_0)
+        memristor = DynamicMemristorFreeRange(g_0)
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+        return memristor
+    elif memristor_model == DynamicMemristorStuck:
+        memristor = DynamicMemristorStuck(g_0)
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
         return memristor
     else:
@@ -322,6 +326,8 @@ def calibrate_memristor(memristor_model, memristor, memristor_params):
     elif memristor_model == DynamicMemristor:
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
     elif memristor_model == DynamicMemristorFreeRange:
+        memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
+    elif memristor_model == DynamicMemristorStuck:
         memristor.calibrate(memristor_params["temperature"], memristor_params["frequency"])
     else:
         raise TypeError('Invalid memristor model')

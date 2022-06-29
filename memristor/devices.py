@@ -69,6 +69,10 @@ class StaticMemristor:
 class DynamicMemristor(StaticMemristor):
     def __init__(self, g_0):
         super().__init__(g_0)
+        """
+        Dynamic Memristor with conductance range capped at 3.16 and 316 uS.
+        :param g_0: ideal conductance
+        """
         self.g_range = [-1,
                         -1]  # conduction range, [left_limit, right_limit], need this because parameters is calibrated
         # in terms of range. Set to dumb value first.
@@ -123,6 +127,11 @@ class DynamicMemristor(StaticMemristor):
 
 class DynamicMemristorFreeRange(StaticMemristor):
     def __init__(self, g_0):
+        """
+        Dynamic memristor with unlimited conductance range. note that however, params are only valid for interpolation
+        in the range 3.16uS to 316 uS.
+        :param g_0: ideal conductance
+        """
         super().__init__(g_0)
         self.g_range = [-1,
                         -1]  # conduction range, [left_limit, right_limit], need this because parameters is calibrated
@@ -160,10 +169,6 @@ class DynamicMemristorFreeRange(StaticMemristor):
                                               self.params["d2_set"]*V_p*logT + self.params["d3_set"]*(V_p**2)*logT +
                                               self.params["d4_set"]*(V_p**3))
         self.g_0 += (D_m + D_d2d)
-        # if self.g_0 > 316e-6:
-        #     self.g_0 = 315e-6
-        # if 3.16e-6 > self.g_0:
-        #     self.g_0 = 3.17e-6
 
     def reset(self, V_p, t_p):
         self.get_params()
@@ -175,10 +180,73 @@ class DynamicMemristorFreeRange(StaticMemristor):
                                                           V_p ** 2) * logT +
                                               self.params["d4_reset"] * V_p ** 3)
         self.g_0 += (D_m + D_d2d)
-        # if self.g_0 > 316e-6:
-        #     self.g_0 = 315e-6
-        # if 3.16e-6 > self.g_0:
-        #     self.g_0 = 3.17e-6
+
+
+class DynamicMemristorStuck(StaticMemristor):
+    def __init__(self, g_0):
+        """
+        Dynamic memristor with stuck conductance when reach limit
+        :param g_0: ideal conductance
+        """
+        super().__init__(g_0)
+        self.g_range = [-1,
+                        -1]  # conduction range, [left_limit, right_limit], need this because parameters is calibrated
+        # in terms of range. Set to dumb value first.
+        self.params = None
+        self.get_params()
+        self.dynamic_d2d_var = np.random.normal(0, 1, 1).item()
+        self.stuck = False
+
+    def get_params(self):
+        assert 3.16e-6 <= self.g_0 <= 316e-6, "conductance out of range"
+        if self.g_range[0] <= self.g_0 <= self.g_range[1]:
+            return
+        # 1. find the appropriate range
+        # 2. get params based on range
+        for index, row in DYNAMIC_PARAMS.iterrows():
+            llimit, rlimit = index.split("-")
+            llimit = float(llimit)*1e-6 # caste type and in us
+            rlimit = float(rlimit)*1e-6 # caste type and in us
+            if llimit <= self.g_0 <= rlimit:
+                self.g_range = [llimit, rlimit]
+                self.params = row.to_dict()
+
+    def set(self, V_p, t_p):
+        if self.stuck:
+            return
+        self.get_params()
+        logT = np.log(t_p)
+        D_m = self.params["c0_set"] * (1-np.tanh(self.params["c1_set"]*(logT-self.params["c2_set"]))) \
+             * (np.tanh(self.params["c3_set"]*V_p-self.params["c4_set"])+1)
+        D_d2d = self.dynamic_d2d_var * D_m * (self.params["d0_set"] + self.params["d1_set"]*(logT**2) +
+                                              self.params["d2_set"]*V_p*logT + self.params["d3_set"]*(V_p**2)*logT +
+                                              self.params["d4_set"]*(V_p**3))
+        self.g_0 += (D_m + D_d2d)
+        if self.g_0 > 316e-6:
+            self.g_0 = 315e-6
+            self.stuck = True
+        if 3.16e-6 > self.g_0:
+            self.g_0 = 3.17e-6
+            self.stuck = True
+
+    def reset(self, V_p, t_p):
+        if self.stuck:
+            return
+        self.get_params()
+        logT = np.log(t_p)
+        D_m = self.params["c0_reset"] * (-1 - np.tanh(self.params["c1_reset"] * (logT - self.params["c2_reset"]))) \
+              * (np.tanh(self.params["c3_reset"] * V_p - self.params["c4_reset"]) - 1)
+        D_d2d = self.dynamic_d2d_var * D_m * (self.params["d0_reset"] + self.params["d1_reset"] * logT ** 2 +
+                                              self.params["d2_reset"] * V_p * logT + self.params["d3_reset"] * (
+                                                          V_p ** 2) * logT +
+                                              self.params["d4_reset"] * V_p ** 3)
+        self.g_0 += (D_m + D_d2d)
+        if self.g_0 > 316e-6:
+            self.g_0 = 315e-6
+            self.stuck = True
+        if 3.16e-6 > self.g_0:
+            self.g_0 = 3.17e-6
+            self.stuck = True
 
 # TODO: Qs for Amirali - T is Celcius or Kelvin? Role of frequency and appropriete value? (Kelvin, 1e8 hz)
 # TODO: Dynamic memristors (DONE)

@@ -183,7 +183,7 @@ def plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied):
     plt.show()
 
 
-def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter):
+def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iterations):
     #crossbar conductance heatmap
     # idea conductance
     plt.matshow(torch.t(crossbar.ideal_w))
@@ -198,7 +198,7 @@ def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter):
 
     ideal_w_hist=[torch.clone(crossbar.ideal_w).view(-1)]
     fitted_w_hist=[torch.clone(crossbar.fitted_w).view(-1)]
-    for i in range(iter):
+    for i in range(iterations):
         #  program the crossbar
         crossbar.lineres_memristive_programming(v_wl_applied, v_bl_applied, t_p)
         ideal_w_hist.append(torch.clone(crossbar.ideal_w).view(-1))
@@ -222,12 +222,12 @@ def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter):
     fitted_w_hist = torch.stack(fitted_w_hist, dim=1)
     #print(ideal_w_hist)
     for i in range(ideal_w_hist.shape[0]):
-        plt.plot(range(iter+1),ideal_w_hist[i,:])
+        plt.plot(range(iterations + 1), ideal_w_hist[i, :])
     plt.title("ideal conductance change")
     plt.show()
 
     for i in range(fitted_w_hist.shape[0]):
-        plt.plot(range(iter+1),fitted_w_hist[i,:])
+        plt.plot(range(iterations + 1), fitted_w_hist[i, :])
     plt.title("fitted conductance change")
     plt.show()
 
