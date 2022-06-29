@@ -258,7 +258,8 @@ class LineResistanceCrossbar:
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
         :return: nx1 analog current vector
         """
-        if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange:
+        if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange\
+                and self.memristor_model is not DynamicMemristorStuck:
             raise TypeError(self.memristor_model+' is not a programmable memristor type')
         W = self.fitted_w
         V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
