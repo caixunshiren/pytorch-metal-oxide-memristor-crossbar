@@ -233,7 +233,7 @@ def plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iterations)
 
 def fig1():
     frequency = 1e8  # hz
-    temperature = 273 + 60  # Kelvin
+    temperature = 60+273  # Kelvin
     g_0 = 50e-6  # S
     v = 0.3  # V
     memristor = StaticMemristor(g_0)
@@ -299,7 +299,7 @@ def fig4():
 
 
 def main():
-    fig3()
+    fig1()
 
 
 if __name__ == "__main__":

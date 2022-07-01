@@ -51,8 +51,8 @@ class StaticMemristor:
                         PARAMS['A1']['p3'] * self.g_0 ** 2
         self.sigma_A3 = PARAMS['A3']['p0'] + PARAMS['A3']['p1'] * self.g_0 + PARAMS['A3']['p2'] * self.t + \
                         PARAMS['A3']['p3'] * self.g_0 ** 2 + PARAMS['A3']['p4'] * self.g_0 * self.t
-        self.g_linfit, _, _, _ = np.linalg.lstsq(np.reshape(np.linspace(-0.4, 0.4, 50), [50,1]),
-                                                 [self.inference(v) for v in np.linspace(-0.4, 0.4, 50)])
+        self.g_linfit, _, _, _ = np.linalg.lstsq(np.reshape(np.linspace(-0.2, 0.2, 50), [50,1]),
+                                                 [self.inference(v) for v in np.linspace(-0.2, 0.2, 50)], rcond=-1)
 
     def inference(self, v):
         """
@@ -94,6 +94,11 @@ class DynamicMemristor(StaticMemristor):
             if llimit <= self.g_0 <= rlimit:
                 self.g_range = [llimit, rlimit]
                 self.params = row.to_dict()
+                # print("------")
+                # print("DEBUG: g_0:", self.g_0)
+                # print("limit:", self.g_range)
+                # print(self.params)
+                # print("------")
 
     def set(self, V_p, t_p):
         self.get_params()
@@ -103,7 +108,10 @@ class DynamicMemristor(StaticMemristor):
         D_d2d = self.dynamic_d2d_var * D_m * (self.params["d0_set"] + self.params["d1_set"]*(logT**2) +
                                               self.params["d2_set"]*V_p*logT + self.params["d3_set"]*(V_p**2)*logT +
                                               self.params["d4_set"]*(V_p**3))
-        self.g_0 += (D_m + D_d2d)
+        D = (D_m + D_d2d)
+        # print(D_m, D_d2d, D)
+        self.g_0 += D
+
         if self.g_0 > 316e-6:
             self.g_0 = 315e-6
         if 3.16e-6 > self.g_0:
@@ -118,7 +126,10 @@ class DynamicMemristor(StaticMemristor):
                                               self.params["d2_reset"] * V_p * logT + self.params["d3_reset"] * (
                                                           V_p ** 2) * logT +
                                               self.params["d4_reset"] * V_p ** 3)
-        self.g_0 += (D_m + D_d2d)
+        D = (D_m + D_d2d)
+        # print(D_m, D_d2d, D)
+        self.g_0 += D
+
         if self.g_0 > 316e-6:
             self.g_0 = 315e-6
         if 3.16e-6 > self.g_0:
