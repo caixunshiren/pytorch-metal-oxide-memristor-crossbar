@@ -22,10 +22,10 @@ class LineResistanceCrossbar:
         """
         self.memristor_model = memristor_model
         self.memristor_params = memristor_params
-        self.memristors = [[initialize_memristor(memristor_model, memristor_params, ideal_w[i, j])
-                            for j in range(ideal_w.shape[1])] for i in range(ideal_w.shape[0])]
-        self.ideal_w = ideal_w
-        self.n, self.m = ideal_w.shape
+        self.ideal_w = torch.clone(ideal_w)
+        self.memristors = [[initialize_memristor(memristor_model, memristor_params, self.ideal_w[i, j])
+                            for j in range(self.ideal_w.shape[1])] for i in range(self.ideal_w.shape[0])]
+        self.n, self.m = self.ideal_w.shape
         self.fitted_w = torch.tensor([[self.memristors[i][j].g_linfit for j in range(ideal_w.shape[1])]
                                       for i in range(ideal_w.shape[0])]).squeeze()
         self.cache = {}  # cache useful statistics to avoid redundant calculations
