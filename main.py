@@ -1,9 +1,10 @@
 import matplotlib.pyplot as plt
 
-from memristor.devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange
+from memristor.devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange, DynamicMemristorStuck
 from memristor.crossbar.model import LineResistanceCrossbar
 import torch
 import numpy as np
+from tqdm import tqdm
 
 
 def graph_I_V(n, v_range, g_0, frequency, temperature):
@@ -298,8 +299,61 @@ def fig4():
     plot_program_crossbar(crossbar, v_wl_applied, v_bl_applied, t_p, iter)
 
 
+class Component:
+    def apply(self, *args, **kwargs):
+        return
+
+
+class CurrentDecoder(Component):
+    """
+    binary decoder based on a threshold vector t
+    """
+    def calibrate_t(self, crossbar: LineResistanceCrossbar, itr: int = 50) -> torch.Tensor:
+        m, n = crossbar.m, crossbar.n
+        X = 0.3*(torch.randint(low=0, high=2, size=[m, itr]))+0.1
+        t = torch.zeros([n,])
+        for i in tqdm(range(itr)):
+            t = t + crossbar.lineres_memristive_vmm(X[:, i], torch.zeros([n]))
+        return t/itr
+
+    def apply(self, x, t=None) -> torch.Tensor:
+        if t is None:
+            t = torch.mean(x) * torch.ones(x.shape)
+        return torch.ge(x, t).type(torch.float64)
+
+
+def test_inference():
+    torch.set_default_dtype(torch.float64)
+
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    # ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+    ideal_w = torch.ones([48, 16])*65e-6
+
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    # randomize weights
+    n_reset = 40
+    t_p_reset = 0.5e-3
+    v_p_bl = 1.5 * torch.cat([torch.linspace(1, 1.2, 16), 1.2 * torch.ones(16, ),
+                              torch.linspace(1.2, 1, 16)], dim=0)
+    for j in tqdm(range(n_reset)):
+        crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset)
+
+    decoder = CurrentDecoder()
+    v_wl_applied = 0.3*(torch.randint(low=0, high=2, size=[16,]))+0.1
+    print("input", v_wl_applied)
+    v_bl_applied = torch.zeros(48)
+    t = decoder.calibrate_t(crossbar, 100)
+    print("threshold", t)
+    x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied)
+    print("raw output", x)
+    print("naive binarization", decoder.apply(x))
+    print("fitted binarization", decoder.apply(x, t))
+
+
 def main():
-    fig1()
+    test_inference()
 
 
 if __name__ == "__main__":
