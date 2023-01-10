@@ -19,7 +19,7 @@ class LineResistanceCrossbar:
         """
         :param memristor_model: memristor model class
         :param memristor_params: dictionary of the model param
-        :param ideal_w: nxm numpy/torch matrix of ideal conductances be programed
+        :param ideal_w: (n,m) numpy/torch matrix of ideal conductances be programed
         """
         self.memristor_model = memristor_model
         self.memristor_params = memristor_params
@@ -92,8 +92,8 @@ class LineResistanceCrossbar:
         """
         idealized vmm
         dims:
-            v: mx1
-            ideal_w: nxm
+            v: (m,)
+            ideal_w: (n,m)
         """
         return torch.matmul(self.ideal_w, v)
 
@@ -101,8 +101,8 @@ class LineResistanceCrossbar:
         """
         idealized vmm using fitted conductance of the memristors
         dims:
-            v: mx1
-            fitted_w: nxm
+            v: (m,)
+            fitted_w: (n,m)
         """
         return torch.matmul(self.fitted_w, v)
 
@@ -110,8 +110,8 @@ class LineResistanceCrossbar:
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
-            v: mx1
-            crossbar: nxm
+            v: (m,1)
+            crossbar: (n,m)
         """
         def mac_op(a1, a2):
             return torch.sum(torch.tensor([a1[j].inference(a2[j]) for j in range(len(a1))]))
@@ -125,10 +125,10 @@ class LineResistanceCrossbar:
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
-            v_dd: mx1
-            ideal_w: nxm
-        :param v_wl_applied: mx1 word line applied analog voltage
-        :param v_bl_applied: nx1 bit line applied analog voltage
+            v_dd: (m,)
+            ideal_w: (n,m)
+        :param v_wl_applied: (m,) word line applied analog voltage
+        :param v_bl_applied: (n,) bit line applied analog voltage
         :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
                           iter = 2 is second order... and so on.
         :param crossbar_cache: whether cache useful statistics
@@ -161,10 +161,10 @@ class LineResistanceCrossbar:
         m word lines and n bit lines
         let M = [A, B; C, D]
         solve MV=E
-        :param W: nxm matrix of conductance, type torch tensor
-        :param v_wl_applied: mx1 word line applied analog voltage
-        :param v_bl_applied: nx1 bit line applied analog voltage
-        :return V: 2mn x 1 vector contains voltages of the word line and bit line
+        :param W: (n,m) matrix of conductance, type torch tensor
+        :param v_wl_applied: (m,) word line applied analog voltage
+        :param v_bl_applied: (n,) bit line applied analog voltage
+        :return V: (2mn,) vector contains voltages of the word line and bit line
         """
         A = self.make_A(W)
         B = self.make_B(W)
@@ -252,16 +252,16 @@ class LineResistanceCrossbar:
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
-            v_dd: mx1
-            ideal_w: nxm
-        :param v_wl_applied: mx1 word line applied analog voltage
-        :param v_bl_applied: nx1 bit line applied analog voltage
+            v_dd: (m,)
+            ideal_w: (n,m)
+        :param v_wl_applied: (m,) word line applied analog voltage
+        :param v_bl_applied: (n,) bit line applied analog voltage
         :param pulse_dur: duration of the pulse in seconds
         :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
                           iter = 2 is second order... and so on.
         :param crossbar_cache: whether cache useful statistics
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
-        :return: nx1 analog current vector
+        :return: (n,) analog current vector
         """
         if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange\
                 and self.memristor_model is not DynamicMemristorStuck:
@@ -343,19 +343,20 @@ def calibrate_memristor(memristor_model, memristor, memristor_params):
 def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_wl,
                   g_s_wl_in, g_s_wl_out, g_s_bl_in, g_s_bl_out) -> (float, float, float):
     """
-    :param V_wl: voltage matrix at each word line node
-    :param V_bl: voltage matrix at each bit line node
-    :param W: conductance matrix of each memristor
-    :param v_wl_in: applied voltage vector from the word lines input
-    :param v_wl_out: applied voltage vector from the word lines output
-    :param v_bl_in: applied voltage vector from the bit lines input
-    :param v_bl_out: applied voltage vector from the bit lines output
-    :param g_bl: conductance of the bit lines
-    :param g_wl: conductance of the word lines
-    :param g_s_wl_in: sensory input word line conductance
-    :param g_s_wl_out: sensory output word line conductance
-    :param g_s_bl_in: sensory input bit line conductance
-    :param g_s_bl_out: sensory output word line conductance
+    compute the power due to memristor, wl, and bl based on dc voltage at each node
+    :param V_wl: (n,m) voltage matrix at each word line node
+    :param V_bl: (n,m) voltage matrix at each bit line node
+    :param W: (n,m) conductance matrix of each memristor
+    :param v_wl_in: (m,) applied voltage vector from the word lines input
+    :param v_wl_out: (m,) applied voltage vector from the word lines output
+    :param v_bl_in: (n,) applied voltage vector from the bit lines input
+    :param v_bl_out: (n,) applied voltage vector from the bit lines output
+    :param g_bl: float scalar conductance of the bit lines
+    :param g_wl: float scalar conductance of the word lines
+    :param g_s_wl_in: float scalar sensory input word line conductance
+    :param g_s_wl_out: float scalar sensory output word line conductance
+    :param g_s_bl_in: float scalar sensory input bit line conductance
+    :param g_s_bl_out: float scalar sensory output word line conductance
     :return: float, power of the circuit
     """
     # power consumption due to memristors
