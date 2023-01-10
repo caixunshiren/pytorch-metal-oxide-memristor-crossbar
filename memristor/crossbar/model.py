@@ -1,4 +1,5 @@
 from ..devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange, DynamicMemristorStuck
+from ..utils import PowerTicket
 import torch
 import numpy as np
 
@@ -70,6 +71,9 @@ class LineResistanceCrossbar:
         self.v_bl_out = torch.zeros(self.n)
         self.v_wl_out = torch.zeros(self.m)
 
+        # Power log
+        self.power_log = []
+
     def recalibrate(self, i, j):
         """
         this function should be called every time the i,j th memristor get programmed
@@ -116,7 +120,8 @@ class LineResistanceCrossbar:
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1, crossbar_cache=True, cap=True):
+    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1,
+                               crossbar_cache=True, cap=True, log_power=False):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -128,13 +133,13 @@ class LineResistanceCrossbar:
                           iter = 2 is second order... and so on.
         :param crossbar_cache: whether cache useful statistics
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
+        :param log_power: If the power of the VMM is logged
         :return: nx1 analog current vector
         """
         W = self.fitted_w
         V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
         for i in range(iter):
             V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
-            #print("debug", V_crossbar.shape, V_crossbar)
             V_wl, V_bl = torch.t(V_crossbar[0,:,:].squeeze()), torch.t(V_crossbar[1,:,:].squeeze())  # now nxm
             V_diff = V_wl - V_bl
             if cap:
@@ -148,7 +153,7 @@ class LineResistanceCrossbar:
         if crossbar_cache:
             self.cache["V_wl"] = V_wl
             self.cache["V_bl"] = V_bl
-        I = V_diff*W # nxm
+        I = V_diff*W  # nxm
         return torch.sum(I, dim=1)
 
     def solve_v(self, W, v_wl_applied, v_bl_applied):
@@ -186,7 +191,7 @@ class LineResistanceCrossbar:
             E_W = torch.cat([torch.cat(((v_wl_applied[i] * self.g_s_wl_in[i]).view(1), torch.zeros(n-2), (v_wl_applied[i] * self.g_s_wl_out[i]).view(1))) for i in range(m)]).unsqueeze(1)
             return torch.cat((E_W, E_B))
         else:
-            raise ValueError('UNKOWN OPERATION MODE')
+            raise ValueError('UNKNOWN OPERATION MODE')
 
     def make_A(self, W):
         W_t = torch.t(W)
@@ -333,3 +338,42 @@ def calibrate_memristor(memristor_model, memristor, memristor_params):
     else:
         raise TypeError('Invalid memristor model')
     return memristor
+
+
+def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_wl,
+                  g_s_wl_in, g_s_wl_out, g_s_bl_in, g_s_bl_out) -> (float, float, float):
+    """
+    :param V_wl: voltage matrix at each word line node
+    :param V_bl: voltage matrix at each bit line node
+    :param W: conductance matrix of each memristor
+    :param v_wl_in: applied voltage vector from the word lines input
+    :param v_wl_out: applied voltage vector from the word lines output
+    :param v_bl_in: applied voltage vector from the bit lines input
+    :param v_bl_out: applied voltage vector from the bit lines output
+    :param g_bl: conductance of the bit lines
+    :param g_wl: conductance of the word lines
+    :param g_s_wl_in: sensory input word line conductance
+    :param g_s_wl_out: sensory output word line conductance
+    :param g_s_bl_in: sensory input bit line conductance
+    :param g_s_bl_out: sensory output word line conductance
+    :return: float, power of the circuit
+    """
+    # power consumption due to memristors
+    p_mem = torch.sum((V_wl-V_bl)**2*W)
+
+    # power consumption due to word line resistance
+    # construct word line conductance matrix
+    W_wl = torch.ones_like(W[:,:-1]) * g_wl
+    W_s_wl_in = torch.ones_like(W[:,0])*g_s_wl_in
+    W_s_wl_out = torch.ones_like(W[:,0])*g_s_wl_out
+    W_wl_all = torch.cat([W_s_wl_in, W_wl, W_s_wl_out], dim=1)
+    p_wlr = torch.sum((torch.cat([v_wl_in, V_wl], dim=1)-torch.cat([V_wl, v_wl_out], dim=1))**2*W_wl_all)
+
+    # power consumption due to bit line resistance
+    W_bl = torch.ones_like(W[:-1, :]) * g_bl
+    W_s_bl_in = torch.ones_like(W[0, :]) * g_s_bl_in
+    W_s_bl_out = torch.ones_like(W[0, :]) * g_s_bl_out
+    W_bl_all = torch.cat([W_s_bl_in, W_bl, W_s_bl_out], dim=0)
+    p_blr = torch.sum((torch.cat([v_bl_in, V_bl], dim=0)-torch.cat([V_wl, v_bl_out], dim=0))**2*W_bl_all)
+
+    return p_mem, p_wlr, p_blr
