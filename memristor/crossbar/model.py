@@ -359,6 +359,11 @@ def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_w
     :param g_s_bl_out: float scalar sensory output word line conductance
     :return: float, power of the circuit
     """
+    # transpose the voltage and conductance matrices
+    V_wl = torch.transpose(V_wl, 0, 1)
+    V_bl = torch.transpose(V_bl, 0, 1)
+    W = torch.transpose(W, 0, 1)
+
     # power consumption due to memristors
     p_mem = torch.sum((V_wl-V_bl)**2*W)
 
