@@ -27,7 +27,7 @@ class DynamicParams:
 
 
 class PowerTicket:
-    def __init__(self, op_type: str, p_mem: float, p_wlr: float, p_blr: float, name):
+    def __init__(self, op_type: str, p_mem: float, p_wlr: float, p_blr: float, name = None):
         assert op_type in ["PROGRAMMING", "INFERENCE"]
         self.power_memristor = p_mem
         self.power_wordline = p_wlr

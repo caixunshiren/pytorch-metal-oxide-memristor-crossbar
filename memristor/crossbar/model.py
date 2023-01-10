@@ -154,6 +154,17 @@ class LineResistanceCrossbar:
             self.cache["V_wl"] = V_wl
             self.cache["V_bl"] = V_bl
         I = V_diff*W  # nxm
+        if log_power:
+            v_wl_out, v_bl_in = self.v_wl_out, self.v_bl_in
+            if self.V_SOURCE_MODE == 'DOUBLE_SIDE' or self.V_SOURCE_MODE == '|=|':
+                v_wl_out, v_bl_in = v_wl_applied, v_bl_applied
+            elif self.V_SOURCE_MODE == 'THREE-QUATER_SIDE' or self.V_SOURCE_MODE == '|_|':
+                v_wl_out, v_bl_in = v_wl_applied, self.v_bl_in
+            p_mem, p_wlr, p_blr = compute_power(V_wl, V_bl, W, v_wl_applied, v_wl_out, v_bl_in, v_bl_applied,
+                                                self.g_bl, self.g_wl, self.g_s_wl_in, self.g_s_wl_out,
+                                                self.g_s_bl_in, self.g_s_bl_out)
+            ticket = PowerTicket(op_type="INFERENCE", p_mem=p_mem, p_wlr=p_wlr, p_blr=p_blr)
+            self.power_log.append(ticket)
         return torch.sum(I, dim=1)
 
     def solve_v(self, W, v_wl_applied, v_bl_applied):
@@ -369,9 +380,9 @@ def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_w
 
     # power consumption due to word line resistance
     # construct word line conductance matrix
-    W_wl = torch.ones_like(W[:,:-1]) * g_wl
-    W_s_wl_in = torch.ones_like(W[:,0])*g_s_wl_in
-    W_s_wl_out = torch.ones_like(W[:,0])*g_s_wl_out
+    W_wl = torch.ones_like(W[:, :-1]) * g_wl
+    W_s_wl_in = torch.ones_like(W[:, 0])*g_s_wl_in
+    W_s_wl_out = torch.ones_like(W[:, 0])*g_s_wl_out
     W_wl_all = torch.cat([W_s_wl_in, W_wl, W_s_wl_out], dim=1)
     p_wlr = torch.sum((torch.cat([v_wl_in, V_wl], dim=1)-torch.cat([V_wl, v_wl_out], dim=1))**2*W_wl_all)
 
@@ -382,4 +393,4 @@ def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_w
     W_bl_all = torch.cat([W_s_bl_in, W_bl, W_s_bl_out], dim=0)
     p_blr = torch.sum((torch.cat([v_bl_in, V_bl], dim=0)-torch.cat([V_wl, v_bl_out], dim=0))**2*W_bl_all)
 
-    return p_mem, p_wlr, p_blr
+    return float(p_mem), float(p_wlr), float(p_blr)
