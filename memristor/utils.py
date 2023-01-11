@@ -1,6 +1,6 @@
 from pathlib import Path
 import pandas as pd
-
+import time
 
 class DynamicParams:
     COLUMNS = ["c0", "c1", "c2", "c3", "c4", "d0", "d1", "d2", "d3", "d4"]
@@ -25,6 +25,18 @@ class DynamicParams:
         """
         pass
 
-dp = DynamicParams()
-print(dp.set)
-print(dp.reset)
+
+class PowerTicket:
+    def __init__(self, op_type: str, p_mem: float, p_wlr: float, p_blr: float, name = None):
+        assert op_type in ["PROGRAMMING", "INFERENCE"]
+        self.power_memristor = p_mem
+        self.power_wordline = p_wlr
+        self.power_bitline = p_blr
+        self.power_total = p_mem+p_wlr+p_blr
+        self.op_type = op_type
+        ms = time.time_ns()
+        self.name = str(ms) if name is None else name
+
+# dp = DynamicParams()
+# print(dp.set)
+# print(dp.reset)
