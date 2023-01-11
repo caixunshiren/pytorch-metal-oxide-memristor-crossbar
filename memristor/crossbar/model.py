@@ -364,10 +364,10 @@ def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_w
     :param v_bl_out: (n,) applied voltage vector from the bit lines output
     :param g_bl: float scalar conductance of the bit lines
     :param g_wl: float scalar conductance of the word lines
-    :param g_s_wl_in: float scalar sensory input word line conductance
-    :param g_s_wl_out: float scalar sensory output word line conductance
-    :param g_s_bl_in: float scalar sensory input bit line conductance
-    :param g_s_bl_out: float scalar sensory output word line conductance
+    :param g_s_wl_in: (m,) sensory input word line conductance
+    :param g_s_wl_out: (m,) sensory output word line conductance
+    :param g_s_bl_in: (n,) sensory input bit line conductance
+    :param g_s_bl_out: (n,) sensory output word line conductance
     :return: float, power of the circuit
     """
     # transpose the voltage and conductance matrices
@@ -381,16 +381,17 @@ def compute_power(V_wl, V_bl, W, v_wl_in, v_wl_out, v_bl_in, v_bl_out, g_bl, g_w
     # power consumption due to word line resistance
     # construct word line conductance matrix
     W_wl = torch.ones_like(W[:, :-1]) * g_wl
-    W_s_wl_in = torch.ones_like(W[:, 0])*g_s_wl_in
-    W_s_wl_out = torch.ones_like(W[:, 0])*g_s_wl_out
+    W_s_wl_in = g_s_wl_in.view(-1, 1)
+    W_s_wl_out = g_s_wl_out.view(-1, 1)
     W_wl_all = torch.cat([W_s_wl_in, W_wl, W_s_wl_out], dim=1)
-    p_wlr = torch.sum((torch.cat([v_wl_in, V_wl], dim=1)-torch.cat([V_wl, v_wl_out], dim=1))**2*W_wl_all)
+    p_wlr = torch.sum((torch.cat([v_wl_in.view(-1, 1), V_wl], dim=1)-torch.cat([V_wl, v_wl_out.view(-1, 1)], dim=1))**2
+                      *W_wl_all)
 
     # power consumption due to bit line resistance
     W_bl = torch.ones_like(W[:-1, :]) * g_bl
-    W_s_bl_in = torch.ones_like(W[0, :]) * g_s_bl_in
-    W_s_bl_out = torch.ones_like(W[0, :]) * g_s_bl_out
+    W_s_bl_in = g_s_bl_in.view(1, -1)
+    W_s_bl_out = g_s_bl_out.view(1, -1)
     W_bl_all = torch.cat([W_s_bl_in, W_bl, W_s_bl_out], dim=0)
-    p_blr = torch.sum((torch.cat([v_bl_in, V_bl], dim=0)-torch.cat([V_wl, v_bl_out], dim=0))**2*W_bl_all)
+    p_blr = torch.sum((torch.cat([v_bl_in.view(1, -1), V_bl], dim=0)-torch.cat([V_bl, v_bl_out.view(1, -1)], dim=0))**2*W_bl_all)
 
     return float(p_mem), float(p_wlr), float(p_blr)
