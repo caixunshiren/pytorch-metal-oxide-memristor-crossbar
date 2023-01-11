@@ -120,7 +120,7 @@ class LineResistanceCrossbar:
             ret[i] = mac_op(row, v)
         return ret
 
-    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, iter=1,
+    def lineres_memristive_vmm(self, v_wl_applied, v_bl_applied, order=1,
                                crossbar_cache=True, cap=True, log_power=False):
         """
         vmm with non-ideal memristor inference and ideal crossbar
@@ -129,8 +129,8 @@ class LineResistanceCrossbar:
             ideal_w: (n,m)
         :param v_wl_applied: (m,) word line applied analog voltage
         :param v_bl_applied: (n,) bit line applied analog voltage
-        :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
-                          iter = 2 is second order... and so on.
+        :param order: int. Order of conductance approximation. order = 0 is constant conductance,
+                        order = 1 is default first order g(v) approximation, order = 2 is second order... and so on.
         :param crossbar_cache: whether cache useful statistics
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
         :param log_power: If the power of the VMM is logged
@@ -138,7 +138,7 @@ class LineResistanceCrossbar:
         """
         W = self.fitted_w
         V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
-        for i in range(iter):
+        for i in range(order):
             V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
             V_wl, V_bl = torch.t(V_crossbar[0,:,:].squeeze()), torch.t(V_crossbar[1,:,:].squeeze())  # now nxm
             V_diff = V_wl - V_bl
@@ -259,7 +259,8 @@ class LineResistanceCrossbar:
 
         return torch.cat([maked(j) for j in range(0,n)], dim=0)
 
-    def lineres_memristive_programming(self, v_wl_applied, v_bl_applied, pulse_dur, iter=1, crossbar_cache=True, cap=True):
+    def lineres_memristive_programming(self, v_wl_applied, v_bl_applied, pulse_dur, order=1,
+                                       crossbar_cache=True, cap=True, log_power=False):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -268,10 +269,11 @@ class LineResistanceCrossbar:
         :param v_wl_applied: (m,) word line applied analog voltage
         :param v_bl_applied: (n,) bit line applied analog voltage
         :param pulse_dur: duration of the pulse in seconds
-        :param iter: int. iter = 0 is constant conductance, iter = 1 is default first order g(v) approximation
-                          iter = 2 is second order... and so on.
+        :param order: int. Order of conductance approximation. order = 0 is constant conductance,
+                        order = 1 is default first order g(v) approximation, order = 2 is second order... and so on.
         :param crossbar_cache: whether cache useful statistics
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
+        :param log_power: If the power of the VMM is logged
         :return: (n,) analog current vector
         """
         if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange\
@@ -279,9 +281,8 @@ class LineResistanceCrossbar:
             raise TypeError(self.memristor_model+' is not a programmable memristor type')
         W = self.fitted_w
         V_crossbar = self.solve_v(W, v_wl_applied, v_bl_applied)
-        for i in range(iter):
+        for i in range(order):
             V_crossbar = V_crossbar.view([-1, self.m, self.n])  # 2xmxn
-            # print("debug", V_crossbar.shape, V_crossbar)
             V_wl, V_bl = torch.t(V_crossbar[0, :, :].squeeze()), torch.t(V_crossbar[1, :, :].squeeze())  # now nxm
             V_diff = V_wl - V_bl
             if cap:
@@ -298,10 +299,21 @@ class LineResistanceCrossbar:
                     self.memristors[i][j].set(V_diff[i,j], pulse_dur)
                 else:
                     self.memristors[i][j].reset(V_diff[i, j], pulse_dur)
-                self.recalibrate(i,j)  # recalibrate the memristor at index i,j
+                self.recalibrate(i, j)  # recalibrate the memristor at index i,j
         if crossbar_cache:
             self.cache["V_wl"] = V_wl
             self.cache["V_bl"] = V_bl
+        if log_power:
+            v_wl_out, v_bl_in = self.v_wl_out, self.v_bl_in
+            if self.V_SOURCE_MODE == 'DOUBLE_SIDE' or self.V_SOURCE_MODE == '|=|':
+                v_wl_out, v_bl_in = v_wl_applied, v_bl_applied
+            elif self.V_SOURCE_MODE == 'THREE-QUATER_SIDE' or self.V_SOURCE_MODE == '|_|':
+                v_wl_out, v_bl_in = v_wl_applied, self.v_bl_in
+            p_mem, p_wlr, p_blr = compute_power(V_wl, V_bl, W, v_wl_applied, v_wl_out, v_bl_in, v_bl_applied,
+                                                self.g_bl, self.g_wl, self.g_s_wl_in, self.g_s_wl_out,
+                                                self.g_s_bl_in, self.g_s_bl_out)
+            ticket = PowerTicket(op_type="PROGRAMMING", p_mem=p_mem, p_wlr=p_wlr, p_blr=p_blr)
+            self.power_log.append(ticket)
 
 
 def initialize_memristor(memristor_model, memristor_params, g_0):

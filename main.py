@@ -274,7 +274,7 @@ def fig3():
     #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
     #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))
     #print("naive memristive vmm:", crossbar.naive_memristive_vmm(v_applied))
-    #print("line resistance memristive vmm:", crossbar.lineres_memristive_vmm(v_applied, iter=1))
+    #print("line resistance memristive vmm:", crossbar.lineres_memristive_vmm(v_applied, order=1))
     plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied)
 
 
@@ -364,7 +364,7 @@ def test_power():
     v_p_bl = 1.5 * torch.cat([torch.linspace(1, 1.2, 16), 1.2 * torch.ones(16, ),
                               torch.linspace(1.2, 1, 16)], dim=0)
     for j in tqdm(range(n_reset)):
-        crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset)
+        crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset, log_power=True)
 
     decoder = CurrentDecoder()
     v_wl_applied = 0.3*(torch.randint(low=0, high=2, size=[16,]))+0.1
@@ -373,7 +373,7 @@ def test_power():
     x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
     print("power:")
     for ticket in crossbar.power_log:
-        print(ticket.name)
+        print(f"{ticket.name} - {ticket.op_type}")
         print("Total Power:", ticket.power_total)
         print("Memristor Power:", ticket.power_memristor)
         print("Word Line Power:", ticket.power_wordline)

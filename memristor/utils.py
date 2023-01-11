@@ -33,6 +33,7 @@ class PowerTicket:
         self.power_wordline = p_wlr
         self.power_bitline = p_blr
         self.power_total = p_mem+p_wlr+p_blr
+        self.op_type = op_type
         ms = time.time_ns()
         self.name = str(ms) if name is None else name
 
