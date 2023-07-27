@@ -321,6 +321,41 @@ class CurrentDecoder(Component):
             t = torch.mean(x) * torch.ones(x.shape)
         return torch.ge(x, t).type(torch.float64)
 
+    def calibrate_max_current(self, crossbar: LineResistanceCrossbar, n_reset: int = 64, itr: int = 1) -> torch.Tensor:
+        """
+        Find the maximum possible current by the crossbar (minimum would be 0)
+        Used for ADC decoder calibration
+        Must re-program the crossbar after calibration
+        """
+        m, n = crossbar.m, crossbar.n
+        # t_p_reset = 0.5e-3
+
+        # # Set all weights to LRS
+        # v_p_bl = -1 * torch.ones(n, )
+        # for j in tqdm(range(n_reset)):
+        #     crossbar.lineres_memristive_programming(torch.zeros(m, ), v_p_bl, t_p_reset, cap=True, log_power=True)
+
+        # Set all inputs to 1 for maximum current
+        X = torch.ones(size=[m, itr]) * 0.4
+        t = torch.zeros([n, ])
+        for i in tqdm(range(itr)):
+            out = crossbar.lineres_memristive_vmm(X[:, i], torch.zeros([n]))
+            t = t + out
+            print("calibration output", out)
+
+        return t / itr
+
+    def apply_2_bits(self, x, max_current) -> torch.Tensor:
+        thresholds = torch.linspace(0, 1, 5)[1:-1].unsqueeze(-1)
+        max_current = max_current.reshape(1, -1)
+        thresholds = thresholds * max_current
+        output = torch.zeros_like(x)
+        print("raw output", x)
+        for threshold in thresholds:
+            output += torch.ge(x, threshold).type(torch.float64)
+        print("output", output)
+        return output
+
 
 def test_inference():
     torch.set_default_dtype(torch.float64)
@@ -379,8 +414,76 @@ def test_power():
         print("Word Line Power:", ticket.power_wordline)
         print("Bit Line Power:", ticket.power_bitline)
 
+
+def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 32, t_p_reset = 0.5e-3, set_voltage_difference = 0.4) -> LineResistanceCrossbar:
+    """
+    Given the input of a binary matrix, build a crossbar with the same shape and conductance
+    :param binary_weights: binary matrix (m, n) where m is the number of rows and n is the number of columns. rows are wordlines (input) and columns are bitlines (output)
+    :param n_reset: number of reset pulses
+    :param t_p_reset: reset pulse duration
+    :return: crossbar with the same shape and conductance
+    """
+    torch.set_default_dtype(torch.float64)
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    m, n = binary_weights.shape
+    ideal_w = torch.ones([n, m])*65e-6  # shape is [number_of_cols, number_of_rows]
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+
+    for _ in tqdm(range(n_reset)):
+        for i in range(m):
+            for j in range(n):
+                bit = binary_weights[i, j]
+                v_p_wl = torch.zeros(m)
+                v_p_bl = torch.zeros(n)
+                if bit == 1:
+                    v_p_wl[i] = set_voltage_difference/2
+                    v_p_bl[j] = -set_voltage_difference/2
+                else:
+                    v_p_wl[i] = -set_voltage_difference/2
+                    v_p_bl[j] = set_voltage_difference/2
+                crossbar.lineres_memristive_programming(v_p_wl, v_p_bl, t_p_reset, log_power=True)
+    return crossbar
+
+
+def test_sequential_bit_input_inference_and_power():
+    torch.set_default_dtype(torch.float64)
+    weights = torch.tensor([
+        [0, 0, 0, 0, 0, 1, 0, 1],
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 0, 0, 0, 0, 0, 1, 1]
+    ])
+    crossbar = build_binary_matrix_crossbar(torch.ones_like(weights), n_reset=64, t_p_reset=0.5e-3, set_voltage_difference=0.4)
+
+    decoder = CurrentDecoder()
+    max_current = decoder.calibrate_max_current(crossbar)
+
+    crossbar = build_binary_matrix_crossbar(weights, n_reset=64, t_p_reset=0.5e-3, set_voltage_difference=0.4)
+
+    input_vector = torch.tensor([
+        [0, 0, 0, 0, 0, 0, 1, 1],
+        [0, 0, 0, 0, 0, 0, 1, 0],
+        [0, 0, 0, 0, 0, 1, 1, 1]
+    ])
+    final_result = 0
+    for bit in range(8):
+        v_wl_applied = input_vector[:, bit] * 0.4
+        v_bl_applied = torch.zeros(8)
+        print("input", v_wl_applied)
+        x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
+        # shift and add
+        decoded = decoder.apply_2_bits(x, max_current)
+        bit_result = 0
+        for i, decoded_bit in enumerate(decoded):
+            bit_result += decoded_bit * 2 ** (8 - i - 1)
+        print("bit result", bit_result)
+        final_result += bit_result * 2 ** (8 - bit - 1)
+    print("final result", final_result)
+
+
 def main():
-    test_power()
+    test_sequential_bit_input_inference_and_power()
 
 
 if __name__ == "__main__":
