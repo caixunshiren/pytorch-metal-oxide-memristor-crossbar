@@ -623,7 +623,7 @@ def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_out
         for i, decoded_bit in enumerate(decoded):
             bit_result += decoded_bit * 2 ** (n - i - 1)
         final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
-    return final_result
+    return final_result.item()
 
 
 def convert_to_binary_array(number, int_bits, fraction_bits):
@@ -647,7 +647,7 @@ def convert_to_binary_array(number, int_bits, fraction_bits):
     return binary_array
 
 
-def calculate_HH_neuron_model(dt=0.01, T=50, int_bits=9, fraction_bits=15, n_reset=1024):
+def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_reset=1024):
     """
     Calculate and plot the result of a Hodgkin-Huxley neuron model
     :param dt: time step
@@ -746,7 +746,13 @@ def calculate_HH_neuron_model(dt=0.01, T=50, int_bits=9, fraction_bits=15, n_res
         m_list.append(m)
         h_list.append(h)
         v_input = torch.tensor([
-            I, n**4 * V, n**4, m**3 * h * V, m**3 * h, V, 1
+            I,
+            n**4 * V,
+            n**4,
+            m**3 * h * V,
+            m**3 * h,
+            V,
+            1
         ])
         n_input = torch.tensor([
             1 / (exp((10 - V) / 10) - 1),
@@ -790,7 +796,24 @@ def calculate_HH_neuron_model(dt=0.01, T=50, int_bits=9, fraction_bits=15, n_res
         n = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input) / 2**fraction_bits
         m = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input) / 2**fraction_bits
         h = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input) / 2**fraction_bits
+        if V > 256:
+            V = 256
+        if V < -256:
+            V = -256
+        if n > 1:
+            n = 1
+        if m > 1:
+            m = 1
+        if h > 1:
+            h = 1
+        if n < 0:
+            n = 0
+        if m < 0:
+            m = 0
+        if h < 0:
+            h = 0
         t += dt
+        print(t)
     # Plot the results, in 4 subplots
     plt.subplot(2, 2, 1)
     plt.title("n")
@@ -815,7 +838,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50, int_bits=9, fraction_bits=15, n_res
 
 
 def main():
-    calculate_HH_neuron_model(n_reset=16)
+    calculate_HH_neuron_model(n_reset=1024, T=20)
 
 if __name__ == "__main__":
     main()
