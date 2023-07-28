@@ -328,7 +328,7 @@ class CurrentDecoder(Component):
         Must re-program the crossbar after calibration
         """
         m, n = crossbar.m, crossbar.n
-        t_p_reset = 0.5e-3
+        t_p_reset = 100e-3
 
         # Set all weights to LRS
         # V_diff is positive to SET the memristor
@@ -356,7 +356,7 @@ class CurrentDecoder(Component):
         Must re-program the crossbar after calibration
         """
         m, n = crossbar.m, crossbar.n
-        t_p_reset = 0.5e-3
+        t_p_reset = 100e-3
 
         # Set all weights to LRS
         # V_diff is positive to SET the memristor
@@ -450,7 +450,7 @@ def test_power():
         print("Bit Line Power:", ticket.power_bitline)
 
 
-def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 64, t_p_reset = 0.5e-3, set_voltage_difference = 1.5) -> LineResistanceCrossbar:
+def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 64, t_p_reset = 100e-3, set_voltage_difference = 1.5) -> LineResistanceCrossbar:
     """
     Given the input of a binary matrix, build a crossbar with the same shape and conductance
     :param binary_weights: binary matrix (m, n) where m is the number of rows and n is the number of columns. rows are wordlines (input) and columns are bitlines (output)
@@ -478,7 +478,7 @@ def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 64
                 else:
                     v_p_wl[i] = -set_voltage_difference/2
                     v_p_bl[j] = set_voltage_difference/2
-                crossbar.lineres_memristive_programming(v_p_wl, v_p_bl, t_p_reset, log_power=True)
+                crossbar.lineres_memristive_programming(v_p_wl, v_p_bl, t_p_reset, order=2, log_power=True)
     return crossbar
 
 
