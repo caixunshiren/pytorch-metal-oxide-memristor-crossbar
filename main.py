@@ -403,34 +403,41 @@ class CurrentDecoder(Component):
         that doesn't exist
 
         """
+        torch.set_default_dtype(torch.float64)
         m, n = crossbar.m, crossbar.n
         # crossbar_bit_lines: {bit_line_index: {possible_value: [sum_current_over_iterations, number_of_occurrence]}}
         crossbar_bit_lines = {i: {} for i in range(n)}
         # Create all possible input combinations
-        X = torch.zeros(size=m)
+        X = torch.zeros(size=[m, ])
         for i in range(itr):
-            output = torch.vmm(binary_crossbar, X.unsqueeze(-1)).squeeze() # [n, ]
+            output = torch.matmul(X, binary_crossbar).squeeze() # [n, ]
             output_current = crossbar.lineres_memristive_vmm(0.4 * X, torch.zeros([n]))
             for j in range(n):
-                if output[j] not in crossbar_bit_lines[j]:
-                    crossbar_bit_lines[j][output[j]] = [output_current, 1]
+                # if the output current is nan, treat it as 0
+                if torch.isnan(output_current[j]):
+                    continue
+                if output[j].item() not in crossbar_bit_lines[j]:
+                    crossbar_bit_lines[j][output[j].item()] = [output_current[j].item(), 1]
                 else:
-                    crossbar_bit_lines[j][output[j]][0] += output_current
-                    crossbar_bit_lines[j][output[j]][1] += 1
+                    crossbar_bit_lines[j][output[j].item()][0] += output_current[j].item()
+                    crossbar_bit_lines[j][output[j].item()][1] += 1
             while X.sum() < m:
                 index = m - 1
                 while X[index] == 1:
                     X[index] = 0
                     index -= 1
                 X[index] = 1
-                output = torch.vmm(binary_crossbar, X.unsqueeze(-1)).squeeze()  # [n, ]
+                output = torch.matmul(X, binary_crossbar).squeeze() # [n, ]
                 output_current = crossbar.lineres_memristive_vmm(0.4 * X, torch.zeros([n]))
                 for j in range(n):
-                    if output[j] not in crossbar_bit_lines[j]:
-                        crossbar_bit_lines[j][output[j]] = [output_current, 1]
+                    # if the output current is nan, treat it as 0
+                    if torch.isnan(output_current[j]):
+                        continue
+                    if output[j].item() not in crossbar_bit_lines[j]:
+                        crossbar_bit_lines[j][output[j].item()] = [output_current[j].item(), 1]
                     else:
-                        crossbar_bit_lines[j][output[j]][0] += output_current
-                        crossbar_bit_lines[j][output[j]][1] += 1
+                        crossbar_bit_lines[j][output[j].item()][0] += output_current[j].item()
+                        crossbar_bit_lines[j][output[j].item()][1] += 1
         # Calculate the average output current for each output value
         for j in range(n):
             for output in crossbar_bit_lines[j]:
@@ -444,11 +451,16 @@ class CurrentDecoder(Component):
         output = torch.zeros_like(output_current)
         for j in range(output_current.shape[0]):
             min_diff = float('inf')
+            # if output is nan, treat it as 0
+            if torch.isnan(output_current[j]):
+                output[j] = 0
+                continue
             for possible_output in crossbar_bit_lines[j]:
                 diff = abs(crossbar_bit_lines[j][possible_output] - output_current[j])
                 if diff < min_diff:
                     min_diff = diff
                     output[j] = possible_output
+        print("decoded output", output)
         return output
 
 def test_inference():
@@ -548,35 +560,17 @@ def test_sequential_bit_input_inference_and_power():
         [0, 0, 0, 0, 0, 1, 0, 1],
         [0, 0, 0, 0, 0, 0, 1, 1],
         [0, 0, 0, 0, 0, 0, 1, 1]
-    ])
-    # crossbar = build_binary_matrix_crossbar(torch.ones_like(weights), n_reset=64, t_p_reset=0.5e-3)
-    torch.set_default_dtype(torch.float64)
-    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
-    memristor_model = DynamicMemristorStuck
-    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
-    m, n = weights.shape
-    ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
-    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    ], dtype=torch.float64)
 
+    crossbar = build_binary_matrix_crossbar(weights,n_reset = 32)
     decoder = CurrentDecoder()
-    max_current = decoder.calibrate_max_current(crossbar)
-
-    torch.set_default_dtype(torch.float64)
-    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
-    memristor_model = DynamicMemristorStuck
-    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
-    m, n = weights.shape
-    ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
-    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
-    min_current = decoder.calibrate_min_current(crossbar)
-
-    crossbar = build_binary_matrix_crossbar(weights)
+    bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(crossbar, weights)
 
     input_vector = torch.tensor([
         [0, 0, 0, 0, 0, 0, 1, 1],
         [0, 0, 0, 0, 0, 0, 1, 0],
         [0, 0, 0, 0, 0, 1, 1, 1]
-    ])
+    ], dtype=torch.float64)
     final_result = 0
     for bit in range(8):
         v_wl_applied = input_vector[:, bit] * 0.4
@@ -584,7 +578,7 @@ def test_sequential_bit_input_inference_and_power():
         print("input", v_wl_applied)
         x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
         # shift and add
-        decoded = decoder.apply_2_bits(x, min_current, max_current)
+        decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs, x)
         bit_result = 0
         for i, decoded_bit in enumerate(decoded):
             bit_result += decoded_bit * 2 ** (8 - i - 1)
