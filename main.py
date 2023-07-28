@@ -321,7 +321,7 @@ class CurrentDecoder(Component):
             t = torch.mean(x) * torch.ones(x.shape)
         return torch.ge(x, t).type(torch.float64)
 
-    def calibrate_max_current(self, crossbar: LineResistanceCrossbar, n_reset: int = 2000, itr: int = 1) -> torch.Tensor:
+    def calibrate_max_current(self, crossbar: LineResistanceCrossbar, n_reset: int = 4000, itr: int = 1) -> torch.Tensor:
         """
         Find the maximum possible current by the crossbar (minimum would be 0)
         Used for ADC decoder calibration
@@ -349,7 +349,7 @@ class CurrentDecoder(Component):
 
         return t_max / itr
     
-    def calibrate_min_current(self, crossbar: LineResistanceCrossbar, n_reset: int = 2000, itr: int = 1) -> torch.Tensor:
+    def calibrate_min_current(self, crossbar: LineResistanceCrossbar, n_reset: int = 4000, itr: int = 1) -> torch.Tensor:
         """
         Find the maximum possible current by the crossbar (minimum would be 0)
         Used for ADC decoder calibration
@@ -390,6 +390,66 @@ class CurrentDecoder(Component):
         print("output", output)
         return output
 
+    def calibrate_binary_crossbar_output_current_thresholds(self,
+                                                            crossbar: LineResistanceCrossbar,
+                                                            binary_crossbar: torch.Tensor,
+                                                            itr: int = 10):
+        """
+        Create all possible input combinations, manually calculate the output value for each input
+        Then we map the output current to the binary crossbar output
+        If an output cannot be reached, we don't map it.
+        we repeat the process itr times and take the average
+        This is so the decoder can directly map the output current to the binary crossbar output, and ignore outputs
+        that doesn't exist
+
+        """
+        m, n = crossbar.m, crossbar.n
+        # crossbar_bit_lines: {bit_line_index: {possible_value: [sum_current_over_iterations, number_of_occurrence]}}
+        crossbar_bit_lines = {i: {} for i in range(n)}
+        # Create all possible input combinations
+        X = torch.zeros(size=m)
+        for i in range(itr):
+            output = torch.vmm(binary_crossbar, X.unsqueeze(-1)).squeeze() # [n, ]
+            output_current = crossbar.lineres_memristive_vmm(0.4 * X, torch.zeros([n]))
+            for j in range(n):
+                if output[j] not in crossbar_bit_lines[j]:
+                    crossbar_bit_lines[j][output[j]] = [output_current, 1]
+                else:
+                    crossbar_bit_lines[j][output[j]][0] += output_current
+                    crossbar_bit_lines[j][output[j]][1] += 1
+            while X.sum() < m:
+                index = m - 1
+                while X[index] == 1:
+                    X[index] = 0
+                    index -= 1
+                X[index] = 1
+                output = torch.vmm(binary_crossbar, X.unsqueeze(-1)).squeeze()  # [n, ]
+                output_current = crossbar.lineres_memristive_vmm(0.4 * X, torch.zeros([n]))
+                for j in range(n):
+                    if output[j] not in crossbar_bit_lines[j]:
+                        crossbar_bit_lines[j][output[j]] = [output_current, 1]
+                    else:
+                        crossbar_bit_lines[j][output[j]][0] += output_current
+                        crossbar_bit_lines[j][output[j]][1] += 1
+        # Calculate the average output current for each output value
+        for j in range(n):
+            for output in crossbar_bit_lines[j]:
+                crossbar_bit_lines[j][output] = crossbar_bit_lines[j][output][0] / crossbar_bit_lines[j][output][1]
+        return crossbar_bit_lines
+
+    def decode_binary_crossbar_output(self, crossbar_bit_lines: dict, output_current: torch.Tensor):
+        """
+        Given the output current, map it to the binary crossbar output that is closest to the output current
+        """
+        output = torch.zeros_like(output_current)
+        for j in range(output_current.shape[0]):
+            min_diff = float('inf')
+            for possible_output in crossbar_bit_lines[j]:
+                diff = abs(crossbar_bit_lines[j][possible_output] - output_current[j])
+                if diff < min_diff:
+                    min_diff = diff
+                    output[j] = possible_output
+        return output
 
 def test_inference():
     torch.set_default_dtype(torch.float64)
@@ -450,7 +510,7 @@ def test_power():
         print("Bit Line Power:", ticket.power_bitline)
 
 
-def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 64, t_p_reset = 100e-3, set_voltage_difference = 1.5) -> LineResistanceCrossbar:
+def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 128, t_p_reset = 100e-3, set_voltage_difference = 1.8) -> LineResistanceCrossbar:
     """
     Given the input of a binary matrix, build a crossbar with the same shape and conductance
     :param binary_weights: binary matrix (m, n) where m is the number of rows and n is the number of columns. rows are wordlines (input) and columns are bitlines (output)
@@ -510,7 +570,7 @@ def test_sequential_bit_input_inference_and_power():
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
     min_current = decoder.calibrate_min_current(crossbar)
 
-    crossbar = build_binary_matrix_crossbar(weights, n_reset=64, t_p_reset=0.5e-3)
+    crossbar = build_binary_matrix_crossbar(weights)
 
     input_vector = torch.tensor([
         [0, 0, 0, 0, 0, 0, 1, 1],

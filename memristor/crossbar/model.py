@@ -297,7 +297,7 @@ class LineResistanceCrossbar:
         V_diff = V_wl - V_bl
         for i in range(self.n):
             for j in range(self.m):
-                threshold = 0
+                threshold = 1.0
                 if V_diff[i,j] > threshold:
                     self.memristors[i][j].set(V_diff[i,j], pulse_dur)
                 elif V_diff[i,j] < -threshold:
