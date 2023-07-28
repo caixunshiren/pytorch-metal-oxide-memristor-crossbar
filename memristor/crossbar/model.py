@@ -295,9 +295,9 @@ class LineResistanceCrossbar:
         V_diff = V_wl - V_bl
         for i in range(self.n):
             for j in range(self.m):
-                if V_diff[i,j] > 0:
+                if V_diff[i,j] > 1.0:
                     self.memristors[i][j].set(V_diff[i,j], pulse_dur)
-                else:
+                elif V_diff[i,j] < -1.0:
                     self.memristors[i][j].reset(V_diff[i, j], pulse_dur)
                 self.recalibrate(i, j)  # recalibrate the memristor at index i,j
         if crossbar_cache:
