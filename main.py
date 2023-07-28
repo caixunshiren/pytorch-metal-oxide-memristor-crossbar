@@ -330,13 +330,13 @@ class CurrentDecoder(Component):
         m, n = crossbar.m, crossbar.n
         t_p_reset = 0.5e-3
 
-        # Set all weights to LRS
-        # V_diff is positive to SET the memristor, and v_p_bl's sign is flipped by the crossbar model
-        # so a positive v_p_bl will SET the memristor
-        # We use 1.5V to SET the memristor
-        v_p_bl = 1.5 * torch.ones(n, )
-        for j in tqdm(range(n_reset)):
-            crossbar.lineres_memristive_programming(torch.zeros(m, ), v_p_bl, t_p_reset, cap=True, log_power=True)
+        # # Set all weights to LRS
+        # # V_diff is positive to SET the memristor, and v_p_bl's sign is flipped by the crossbar model
+        # # so a positive v_p_bl will SET the memristor
+        # # We use 1.5V to SET the memristor
+        # v_p_bl = -1.5 * torch.ones(n, )
+        # for j in tqdm(range(n_reset)):
+        #     crossbar.lineres_memristive_programming(torch.zeros(m, ), v_p_bl, t_p_reset, cap=True, log_power=True)
 
         # Set all inputs to 1 for maximum current
         # assuming that inference uses 0.4V
@@ -443,10 +443,10 @@ def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 32
                 v_p_bl = torch.zeros(n)
                 if bit == 1:
                     v_p_wl[i] = set_voltage_difference/2
-                    v_p_bl[j] = set_voltage_difference/2
+                    v_p_bl[j] = -set_voltage_difference/2
                 else:
                     v_p_wl[i] = set_voltage_difference/2
-                    v_p_bl[j] = set_voltage_difference/2
+                    v_p_bl[j] = -set_voltage_difference/2
                 crossbar.lineres_memristive_programming(v_p_wl, v_p_bl, t_p_reset, log_power=True)
     return crossbar
 
@@ -458,12 +458,19 @@ def test_sequential_bit_input_inference_and_power():
         [0, 0, 0, 0, 0, 0, 1, 1],
         [0, 0, 0, 0, 0, 0, 1, 1]
     ])
-    crossbar = build_binary_matrix_crossbar(torch.ones_like(weights), n_reset=64, t_p_reset=0.5e-3, set_voltage_difference=0.4)
+    crossbar = build_binary_matrix_crossbar(torch.ones_like(weights), n_reset=64, t_p_reset=0.5e-3)
+    # torch.set_default_dtype(torch.float64)
+    # crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    # memristor_model = DynamicMemristorStuck
+    # memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    # m, n = weights.shape
+    # ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
+    # crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
 
     decoder = CurrentDecoder()
     max_current = decoder.calibrate_max_current(crossbar)
 
-    crossbar = build_binary_matrix_crossbar(weights, n_reset=64, t_p_reset=0.5e-3, set_voltage_difference=0.4)
+    crossbar = build_binary_matrix_crossbar(weights, n_reset=64, t_p_reset=0.5e-3)
 
     input_vector = torch.tensor([
         [0, 0, 0, 0, 0, 0, 1, 1],
