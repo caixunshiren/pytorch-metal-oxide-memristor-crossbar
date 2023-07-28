@@ -328,14 +328,17 @@ class CurrentDecoder(Component):
         Must re-program the crossbar after calibration
         """
         m, n = crossbar.m, crossbar.n
-        # t_p_reset = 0.5e-3
+        t_p_reset = 0.5e-3
 
-        # # Set all weights to LRS
-        # v_p_bl = -1 * torch.ones(n, )
-        # for j in tqdm(range(n_reset)):
-        #     crossbar.lineres_memristive_programming(torch.zeros(m, ), v_p_bl, t_p_reset, cap=True, log_power=True)
+        # Set all weights to LRS
+        # V_diff is positive to SET the memristor, and v_p_bl's sign is flipped by the crossbar model
+        # so a positive v_p_bl will SET the memristor
+        v_p_bl = 1.5 * torch.ones(n, )
+        for j in tqdm(range(n_reset)):
+            crossbar.lineres_memristive_programming(torch.zeros(m, ), v_p_bl, t_p_reset, cap=True, log_power=True)
 
         # Set all inputs to 1 for maximum current
+        #
         X = torch.ones(size=[m, itr]) * 0.4
         t = torch.zeros([n, ])
         for i in tqdm(range(itr)):
