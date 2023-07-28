@@ -4,6 +4,7 @@ from memristor.devices import StaticMemristor, DynamicMemristor, DynamicMemristo
 from memristor.crossbar.model import LineResistanceCrossbar
 import torch
 import numpy as np
+from math import exp
 from tqdm import tqdm
 
 
@@ -599,8 +600,222 @@ def test_sequential_bit_input_inference_and_power():
                     final_result += bit_result * 2 ** (8 - bit - 1)
                 print("final result", final_result)
 
+
+def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_outputs: dict, decoder: CurrentDecoder, input_vector: torch.Tensor):
+    """
+    Calculate the result of a vector matrix multiplication
+    :param crossbar: crossbar that is pre-programmed with the weights
+    :param bit_line_possible_outputs: dictionary of possible outputs for each bitline for decoding purpose
+    :param decoder: decoder used to process current into digital output
+    :param input_vector: input vector (binary numbers, 2d tensor) to be multiplied with the weights
+    :return: the result of the vector matrix multiplication as a decimal number
+    """
+    length_of_input_vector = input_vector.shape[1]
+    m, n = crossbar.m, crossbar.n
+    final_result = 0
+    for bit in range(length_of_input_vector):
+        v_wl_applied = input_vector[:, bit] * 0.4
+        v_bl_applied = torch.zeros(n)
+        x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
+        # shift and add
+        decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs, x)
+        bit_result = 0
+        for i, decoded_bit in enumerate(decoded):
+            bit_result += decoded_bit * 2 ** (n - i - 1)
+        final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
+    return final_result
+
+
+def convert_to_binary_array(number, int_bits, fraction_bits):
+    """
+    Convert a decimal number to a binary array
+    Consider 2's complement for negative numbers
+    :param number: decimal number
+    :param int_bits: number of integer bits
+    :param fraction_bits: number of fraction bits
+    :return: binary array
+    """
+    number = int(number * 2 ** fraction_bits)
+    if number >= 0:
+        binary_string = bin(number)[2:].zfill(int_bits + fraction_bits)  # Convert integer to binary and fill leading zeros
+        binary_array = [int(bit) for bit in binary_string]
+    else:
+        positive_value = abs(number) - 1
+        binary_string = bin(positive_value)[2:].zfill(
+            int_bits + fraction_bits)  # Convert positive value to binary and fill leading zeros
+        binary_array = [int(not int(bit)) for bit in binary_string]  # Invert bits for 2's complement
+    return binary_array
+
+
+def calculate_HH_neuron_model(dt=0.01, T=50, int_bits=9, fraction_bits=15, n_reset=1024):
+    """
+    Calculate and plot the result of a Hodgkin-Huxley neuron model
+    :param dt: time step
+    :param T: total time
+    :param int_bits: number of integer bits for the crossbar (we use signed integer)
+    :param fraction_bits: number of fraction bits for the crossbar
+    :return: None
+    """
+    torch.set_default_dtype(torch.float64)
+    HH_params = {
+        'C_m': 1.0,
+        'g_Na': 120,
+        'g_K': 36,
+        'g_L': 0.3,
+        'V_Na': 115,
+        'V_K': -12,
+        'V_L': 10.613
+    }
+    weights_for_v = torch.tensor([
+        dt / HH_params['C_m'],
+        -dt * HH_params['g_K'] / HH_params['C_m'],
+        dt * HH_params['g_K'] * HH_params['V_K'] / HH_params['C_m'],
+        -dt * HH_params['g_Na'] / HH_params['C_m'],
+        dt * HH_params['g_Na'] * HH_params['V_Na'] / HH_params['C_m'],
+        1 - dt * HH_params['g_L'] / HH_params['C_m'],
+        dt * HH_params['g_L'] * HH_params['V_L'] / HH_params['C_m']
+        ])
+    binary_weights_for_v = torch.tensor([
+        convert_to_binary_array(weight, int_bits, fraction_bits)
+        for weight in weights_for_v
+    ], dtype=torch.float64)
+    weights_for_n = torch.tensor([
+        0.01 * dt * 10,
+        -0.01 * dt,
+        -0.01 * dt * 10,
+        0.01 * dt,
+        -0.125 * dt,
+        1
+    ])
+    binary_weights_for_n = torch.tensor([
+        convert_to_binary_array(weight, int_bits, fraction_bits)
+        for weight in weights_for_n
+    ], dtype=torch.float64)
+    weights_for_m = torch.tensor([
+        0.1 * dt * 25,
+        -0.1 * dt,
+        -0.1 * dt * 25,
+        0.1 * dt,
+        -4 * dt,
+        1
+    ])
+    binary_weights_for_m = torch.tensor([
+        convert_to_binary_array(weight, int_bits, fraction_bits)
+        for weight in weights_for_m
+    ], dtype=torch.float64)
+    weights_for_h = torch.tensor([
+        0.07 * dt,
+        -0.07 * dt,
+        dt,
+        1
+    ])
+    binary_weights_for_h = torch.tensor([
+        convert_to_binary_array(weight, int_bits, fraction_bits)
+        for weight in weights_for_h
+    ], dtype=torch.float64)
+    v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=100e-3,
+                                     set_voltage_difference=1.8)
+    n_crossbar = build_binary_matrix_crossbar(binary_weights_for_n, n_reset=n_reset, t_p_reset=100e-3,
+                                        set_voltage_difference=1.8)
+    m_crossbar = build_binary_matrix_crossbar(binary_weights_for_m, n_reset=n_reset, t_p_reset=100e-3,
+                                        set_voltage_difference=1.8)
+    h_crossbar = build_binary_matrix_crossbar(binary_weights_for_h, n_reset=n_reset, t_p_reset=100e-3,
+                                        set_voltage_difference=1.8)
+    decoder = CurrentDecoder()
+    v_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar, binary_weights_for_v)
+    n_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(n_crossbar, binary_weights_for_n)
+    m_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar, binary_weights_for_m)
+    h_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar, binary_weights_for_h)
+    V = -10
+    n = 0
+    m = 0
+    h = 0
+    I = 10
+
+    t = 0
+    t_list = []
+    V_list = []
+    n_list = []
+    m_list = []
+    h_list = []
+
+    while t < T:
+        t_list.append(t)
+        V_list.append(V)
+        n_list.append(n)
+        m_list.append(m)
+        h_list.append(h)
+        v_input = torch.tensor([
+            I, n**4 * V, n**4, m**3 * h * V, m**3 * h, V, 1
+        ])
+        n_input = torch.tensor([
+            1 / (exp((10 - V) / 10) - 1),
+            V / (exp((10 - V) / 10) - 1),
+            n / (exp((10 - V) / 10) - 1),
+            n * V / (exp((10 - V) / 10) - 1),
+            exp(-V / 80) * n,
+            n
+        ])
+        m_input = torch.tensor([
+            1 / (exp((25 - V) / 10) - 1),
+            V / (exp((25 - V) / 10) - 1),
+            m / (exp((25 - V) / 10) - 1),
+            m * V / (exp((25 - V) / 10) - 1),
+            exp(-V / 18) * m,
+            m
+        ])
+        h_input = torch.tensor([
+            exp(-V / 20),
+            h * exp(-V / 20),
+            h / (exp((30 - V) / 10) + 1),
+            h
+        ])
+        v_binary_input = torch.tensor([
+            convert_to_binary_array(weight, int_bits, fraction_bits)
+            for weight in v_input
+        ], dtype=torch.float64)
+        n_binary_input = torch.tensor([
+            convert_to_binary_array(weight, int_bits, fraction_bits)
+            for weight in n_input
+        ], dtype=torch.float64)
+        m_binary_input = torch.tensor([
+            convert_to_binary_array(weight, int_bits, fraction_bits)
+            for weight in m_input
+        ], dtype=torch.float64)
+        h_binary_input = torch.tensor([
+            convert_to_binary_array(weight, int_bits, fraction_bits)
+            for weight in h_input
+        ], dtype=torch.float64)
+        V = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input) / 2**fraction_bits
+        n = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input) / 2**fraction_bits
+        m = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input) / 2**fraction_bits
+        h = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input) / 2**fraction_bits
+        t += dt
+    # Plot the results, in 4 subplots
+    plt.subplot(2, 2, 1)
+    plt.title("n")
+    plt.plot(t_list, n_list, label="n")
+    plt.subplot(2, 2, 2)
+    plt.title("m")
+    plt.plot(t_list, m_list, label="m")
+    plt.subplot(2, 2, 3)
+    plt.title("h")
+    plt.plot(t_list, h_list, label="h")
+    plt.subplot(2, 2, 4)
+    plt.title("V")
+    plt.plot(t_list, V_list, label="V")
+    plt.show()
+
+
+
+
+
+
+
+
+
 def main():
-    test_sequential_bit_input_inference_and_power()
+    calculate_HH_neuron_model(n_reset=16)
 
 if __name__ == "__main__":
     main()
