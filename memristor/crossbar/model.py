@@ -154,8 +154,8 @@ class LineResistanceCrossbar:
             self.cache["V_wl"] = V_wl
             self.cache["V_bl"] = V_bl
         I = V_diff*W  # nxm
-        print("V_diff", V_diff)
-        print("W", W)
+        # print("V_diff", V_diff)
+        # print("W", W)
         if log_power:
             v_wl_out, v_bl_in = self.v_wl_out, self.v_bl_in
             if self.V_SOURCE_MODE == 'DOUBLE_SIDE' or self.V_SOURCE_MODE == '|=|':

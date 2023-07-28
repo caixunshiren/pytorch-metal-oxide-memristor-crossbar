@@ -562,30 +562,40 @@ def test_sequential_bit_input_inference_and_power():
         [0, 0, 0, 0, 0, 0, 1, 1]
     ], dtype=torch.float64)
 
-    crossbar = build_binary_matrix_crossbar(weights,n_reset = 32)
+    crossbar = build_binary_matrix_crossbar(weights,n_reset = 128)
     decoder = CurrentDecoder()
     bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(crossbar, weights)
 
-    input_vector = torch.tensor([
-        [0, 0, 0, 0, 0, 0, 1, 1],
-        [0, 0, 0, 0, 0, 0, 1, 0],
-        [0, 0, 0, 0, 0, 1, 1, 1]
-    ], dtype=torch.float64)
-    final_result = 0
-    for bit in range(8):
-        v_wl_applied = input_vector[:, bit] * 0.4
-        v_bl_applied = torch.zeros(8)
-        print("input", v_wl_applied)
-        x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
-        # shift and add
-        decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs, x)
-        bit_result = 0
-        for i, decoded_bit in enumerate(decoded):
-            bit_result += decoded_bit * 2 ** (8 - i - 1)
-        print("bit result", bit_result)
-        final_result += bit_result * 2 ** (8 - bit - 1)
-    print("final result", final_result)
-
+    for number_1 in range(1, 11):
+        for number_2 in range(1, 11):
+            for number_3 in range(1, 11):
+                binary_1 = bin(number_1)[2:]
+                binary_2 = bin(number_2)[2:]
+                binary_3 = bin(number_3)[2:]
+                binary_array_1 = [int(bit) for bit in binary_1]
+                binary_array_2 = [int(bit) for bit in binary_2]
+                binary_array_3 = [int(bit) for bit in binary_3]
+                input_vector = torch.tensor([
+                    binary_array_1,
+                    binary_array_2,
+                    binary_array_3
+                ], dtype=torch.float64)
+                print("input numbers", number_1, number_2, number_3)
+                print("expected output", number_1*5 + number_2*3 + number_3*3)
+                final_result = 0
+                for bit in range(8):
+                    v_wl_applied = input_vector[:, bit] * 0.4
+                    v_bl_applied = torch.zeros(8)
+                    print("input", v_wl_applied)
+                    x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
+                    # shift and add
+                    decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs, x)
+                    bit_result = 0
+                    for i, decoded_bit in enumerate(decoded):
+                        bit_result += decoded_bit * 2 ** (8 - i - 1)
+                    print("bit result", bit_result)
+                    final_result += bit_result * 2 ** (8 - bit - 1)
+                print("final result", final_result)
 
 def main():
     test_sequential_bit_input_inference_and_power()
