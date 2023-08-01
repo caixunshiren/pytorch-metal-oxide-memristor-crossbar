@@ -565,7 +565,7 @@ def test_sequential_bit_input_inference_and_power():
 
     # IMPORTANT: 1024 reset pulses are needed to ensure that the crossbar is fully reset
     # This has been tested, where smaller number of reset pulses result in incorrect inference
-    crossbar = build_binary_matrix_crossbar(weights,n_reset = 1024)
+    crossbar = build_binary_matrix_crossbar(weights,n_reset = 5, t_p_reset=20)
     decoder = CurrentDecoder()
     bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(crossbar, weights)
 
@@ -626,33 +626,38 @@ def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_out
     return final_result.item()
 
 
-def convert_to_binary_array(number, int_bits, fraction_bits):
+def convert_to_binary_array(number, int_bits, fraction_bits, adjust_for_multiplication=True):
     """
     Convert a decimal number to a binary array
     Consider 2's complement for negative numbers
     :param number: decimal number
     :param int_bits: number of integer bits
     :param fraction_bits: number of fraction bits
+    :param adjust_for_multiplication: whether to adjust the number for multiplication (add leading 1s or 0s)
     :return: binary array
     """
     number = int(number * 2 ** fraction_bits)
     if number >= 0:
         binary_string = bin(number)[2:].zfill(int_bits + fraction_bits)  # Convert integer to binary and fill leading zeros
         binary_array = [int(bit) for bit in binary_string]
+        # Add same number of bits of zeros to the beginning of the array
+        binary_array = [0] * (int_bits + fraction_bits) + binary_array
     else:
         positive_value = abs(number) - 1
         binary_string = bin(positive_value)[2:].zfill(
             int_bits + fraction_bits)  # Convert positive value to binary and fill leading zeros
         binary_array = [int(not int(bit)) for bit in binary_string]  # Invert bits for 2's complement
+        # Add same number of bits of ones to the beginning of the array
+        binary_array = [1] * (int_bits + fraction_bits) + binary_array
     return binary_array
 
 
-def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_reset=1024):
+def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_reset=1024, t_p_reset=100e-3):
     """
     Calculate and plot the result of a Hodgkin-Huxley neuron model
     :param dt: time step
     :param T: total time
-    :param int_bits: number of integer bits for the crossbar (we use signed integer)
+    :param int_bits: number of integer bits for the crossbar (we use signed integer) (2's complement)
     :param fraction_bits: number of fraction bits for the crossbar
     :return: None
     """
@@ -776,6 +781,12 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
             h / (exp((30 - V) / 10) + 1),
             h
         ])
+        # clamp all input to -2**int_bits, 2**int_bits - 1
+        v_input = torch.clamp(v_input, -2**int_bits, 2**int_bits - 1)
+        n_input = torch.clamp(n_input, -2**int_bits, 2**int_bits - 1)
+        m_input = torch.clamp(m_input, -2**int_bits, 2**int_bits - 1)
+        h_input = torch.clamp(h_input, -2**int_bits, 2**int_bits - 1)
+
         v_binary_input = torch.tensor([
             convert_to_binary_array(weight, int_bits, fraction_bits)
             for weight in v_input
@@ -792,10 +803,31 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
             convert_to_binary_array(weight, int_bits, fraction_bits)
             for weight in h_input
         ], dtype=torch.float64)
-        V = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input) / 2**fraction_bits
-        n = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input) / 2**fraction_bits
-        m = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input) / 2**fraction_bits
-        h = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input) / 2**fraction_bits
+        V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
+        n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
+        m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
+        h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
+
+        # only take last "n" digits
+        V_result = int(V_result) & ((1 << (int_bits + fraction_bits)) - 1)
+        n_result = int(n_result) & ((1 << (int_bits + fraction_bits)) - 1)
+        m_result = int(m_result) & ((1 << (int_bits + fraction_bits)) - 1)
+        h_result = int(h_result) & ((1 << (int_bits + fraction_bits)) - 1)
+
+        # divide number by 2**fraction_bits, and minus 2**int_bits twice if leading bit is 1
+        if V_result & (1 << (int_bits + fraction_bits - 1)):
+            V_result = V_result - (1 << (int_bits + fraction_bits))
+        if n_result & (1 << (int_bits + fraction_bits - 1)):
+            n_result = n_result - (1 << (int_bits + fraction_bits))
+        if m_result & (1 << (int_bits + fraction_bits - 1)):
+            m_result = m_result - (1 << (int_bits + fraction_bits))
+        if h_result & (1 << (int_bits + fraction_bits - 1)):
+            h_result = h_result - (1 << (int_bits + fraction_bits))
+        V = V_result / (1 << fraction_bits)
+        n = n_result / (1 << fraction_bits)
+        m = m_result / (1 << fraction_bits)
+        h = h_result / (1 << fraction_bits)
+
         if V > 256:
             V = 256
         if V < -256:
@@ -813,7 +845,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         if h < 0:
             h = 0
         t += dt
-        print(t)
+        print(t, V, n, m, h)
     # Plot the results, in 4 subplots
     plt.subplot(2, 2, 1)
     plt.title("n")
@@ -838,7 +870,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
 
 
 def main():
-    calculate_HH_neuron_model(n_reset=1024, T=20)
+    # test_sequential_bit_input_inference_and_power()
+    calculate_HH_neuron_model(n_reset=2, T=5, t_p_reset=2500)
 
 if __name__ == "__main__":
     main()
