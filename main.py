@@ -641,14 +641,16 @@ def convert_to_binary_array(number, int_bits, fraction_bits, adjust_for_multipli
         binary_string = bin(number)[2:].zfill(int_bits + fraction_bits)  # Convert integer to binary and fill leading zeros
         binary_array = [int(bit) for bit in binary_string]
         # Add same number of bits of zeros to the beginning of the array
-        binary_array = [0] * (int_bits + fraction_bits) + binary_array
+        if adjust_for_multiplication:
+            binary_array = [0] * (int_bits + fraction_bits) + binary_array
     else:
         positive_value = abs(number) - 1
         binary_string = bin(positive_value)[2:].zfill(
             int_bits + fraction_bits)  # Convert positive value to binary and fill leading zeros
         binary_array = [int(not int(bit)) for bit in binary_string]  # Invert bits for 2's complement
         # Add same number of bits of ones to the beginning of the array
-        binary_array = [1] * (int_bits + fraction_bits) + binary_array
+        if adjust_for_multiplication:
+            binary_array = [1] * (int_bits + fraction_bits) + binary_array
     return binary_array
 
 
@@ -718,13 +720,13 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         convert_to_binary_array(weight, int_bits, fraction_bits)
         for weight in weights_for_h
     ], dtype=torch.float64)
-    v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=100e-3,
+    v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=t_p_reset,
                                      set_voltage_difference=1.8)
-    n_crossbar = build_binary_matrix_crossbar(binary_weights_for_n, n_reset=n_reset, t_p_reset=100e-3,
+    n_crossbar = build_binary_matrix_crossbar(binary_weights_for_n, n_reset=n_reset, t_p_reset=t_p_reset,
                                         set_voltage_difference=1.8)
-    m_crossbar = build_binary_matrix_crossbar(binary_weights_for_m, n_reset=n_reset, t_p_reset=100e-3,
+    m_crossbar = build_binary_matrix_crossbar(binary_weights_for_m, n_reset=n_reset, t_p_reset=t_p_reset,
                                         set_voltage_difference=1.8)
-    h_crossbar = build_binary_matrix_crossbar(binary_weights_for_h, n_reset=n_reset, t_p_reset=100e-3,
+    h_crossbar = build_binary_matrix_crossbar(binary_weights_for_h, n_reset=n_reset, t_p_reset=t_p_reset,
                                         set_voltage_difference=1.8)
     decoder = CurrentDecoder()
     v_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar, binary_weights_for_v)
@@ -808,25 +810,31 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
         h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
 
-        # only take last "n" digits
-        V_result = int(V_result) & ((1 << (int_bits + fraction_bits)) - 1)
-        n_result = int(n_result) & ((1 << (int_bits + fraction_bits)) - 1)
-        m_result = int(m_result) & ((1 << (int_bits + fraction_bits)) - 1)
-        h_result = int(h_result) & ((1 << (int_bits + fraction_bits)) - 1)
+        # only take last "2n" digits
+        V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
 
-        # divide number by 2**fraction_bits, and minus 2**int_bits twice if leading bit is 1
-        if V_result & (1 << (int_bits + fraction_bits - 1)):
-            V_result = V_result - (1 << (int_bits + fraction_bits))
-        if n_result & (1 << (int_bits + fraction_bits - 1)):
-            n_result = n_result - (1 << (int_bits + fraction_bits))
-        if m_result & (1 << (int_bits + fraction_bits - 1)):
-            m_result = m_result - (1 << (int_bits + fraction_bits))
-        if h_result & (1 << (int_bits + fraction_bits - 1)):
-            h_result = h_result - (1 << (int_bits + fraction_bits))
-        V = V_result / (1 << fraction_bits)
-        n = n_result / (1 << fraction_bits)
-        m = m_result / (1 << fraction_bits)
-        h = h_result / (1 << fraction_bits)
+        # divide number by 2**(2 * fraction_bits), and minus 2**int_bits twice if leading bit is 1
+        if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+
+        V_result = V_result / (1 << (2 * fraction_bits - 1))
+        n_result = n_result / (1 << (2 * fraction_bits - 1))
+        m_result = m_result / (1 << (2 * fraction_bits - 1))
+        h_result = h_result / (1 << (2 * fraction_bits - 1))
+
+        V = V_result
+        n = n_result
+        m = m_result
+        h = h_result
 
         if V > 256:
             V = 256
@@ -871,7 +879,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=2, T=5, t_p_reset=2500)
+    calculate_HH_neuron_model(n_reset=2, T=5, t_p_reset=10000)
 
 if __name__ == "__main__":
     main()
