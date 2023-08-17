@@ -601,7 +601,7 @@ def test_sequential_bit_input_inference_and_power():
                 print("final result", final_result)
 
 
-def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_outputs: dict, decoder: CurrentDecoder, input_vector: torch.Tensor):
+def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_outputs: dict, decoder: CurrentDecoder, input_vector: torch.Tensor, twos_complement: bool = True):
     """
     Calculate the result of a vector matrix multiplication
     :param crossbar: crossbar that is pre-programmed with the weights
@@ -621,8 +621,14 @@ def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_out
         decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs, x)
         bit_result = 0
         for i, decoded_bit in enumerate(decoded):
-            bit_result += decoded_bit * 2 ** (n - i - 1)
-        final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
+            if i == 0 and twos_complement:
+                bit_result -= decoded_bit * 2 ** (n - i - 1)
+            else:
+                bit_result += decoded_bit * 2 ** (n - i - 1)
+        if twos_complement and bit == 0:
+            final_result -= bit_result * 2 ** (length_of_input_vector - bit - 1)
+        else:
+            final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
     return final_result.item()
 
 
@@ -683,7 +689,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         dt * HH_params['g_L'] * HH_params['V_L'] / HH_params['C_m']
         ])
     binary_weights_for_v = torch.tensor([
-        convert_to_binary_array(weight, int_bits, fraction_bits)
+        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
         for weight in weights_for_v
     ], dtype=torch.float64)
     weights_for_n = torch.tensor([
@@ -695,7 +701,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         1
     ])
     binary_weights_for_n = torch.tensor([
-        convert_to_binary_array(weight, int_bits, fraction_bits)
+        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
         for weight in weights_for_n
     ], dtype=torch.float64)
     weights_for_m = torch.tensor([
@@ -707,7 +713,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         1
     ])
     binary_weights_for_m = torch.tensor([
-        convert_to_binary_array(weight, int_bits, fraction_bits)
+        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
         for weight in weights_for_m
     ], dtype=torch.float64)
     weights_for_h = torch.tensor([
@@ -717,7 +723,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         1
     ])
     binary_weights_for_h = torch.tensor([
-        convert_to_binary_array(weight, int_bits, fraction_bits)
+        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
         for weight in weights_for_h
     ], dtype=torch.float64)
     v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=t_p_reset,
@@ -790,19 +796,19 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         h_input = torch.clamp(h_input, -2**int_bits, 2**int_bits - 1)
 
         v_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits)
+            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
             for weight in v_input
         ], dtype=torch.float64)
         n_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits)
+            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
             for weight in n_input
         ], dtype=torch.float64)
         m_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits)
+            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
             for weight in m_input
         ], dtype=torch.float64)
         h_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits)
+            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
             for weight in h_input
         ], dtype=torch.float64)
         V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
@@ -811,25 +817,25 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
 
         # only take last "2n" digits
-        V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        # V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        # n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        # m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+        # h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
 
         # divide number by 2**(2 * fraction_bits), and minus 2**int_bits twice if leading bit is 1
-        if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        # if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+        #     V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        # if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+        #     n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        # if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+        #     m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+        # if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+        #     h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
 
-        V_result = V_result / (1 << (2 * fraction_bits - 1))
-        n_result = n_result / (1 << (2 * fraction_bits - 1))
-        m_result = m_result / (1 << (2 * fraction_bits - 1))
-        h_result = h_result / (1 << (2 * fraction_bits - 1))
+        V_result = V_result / (2 ** (2 * fraction_bits))
+        n_result = n_result / (2 ** (2 * fraction_bits))
+        m_result = m_result / (2 ** (2 * fraction_bits))
+        h_result = h_result / (2 ** (2 * fraction_bits))
 
         V = V_result
         n = n_result
@@ -881,13 +887,9 @@ TODO:
 3. in the compute function, after summing chunks for each input bit slice, make sure to subtract the MSB's 2's complement 
 """
 
-
-
-
-
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=2, T=5, t_p_reset=10000)
+    calculate_HH_neuron_model(n_reset=5, T=5, t_p_reset=10000)
 
 if __name__ == "__main__":
     main()
