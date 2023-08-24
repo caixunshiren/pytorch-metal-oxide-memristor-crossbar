@@ -64,7 +64,7 @@ class LineResistanceCrossbar:
             self.g_s_bl_out = torch.ones(self.n) / self.r_out
 
         else:
-            raise ValueError("UNKOWN OPERATION MODE")
+            raise ValueError("UNKNOWN OPERATION MODE")
 
         # WL & BL voltages that are not the signal, assume bl_in, wl_out are tied low and bl_out is tied to 1 V.
         self.v_bl_in = torch.zeros(self.n)
