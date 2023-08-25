@@ -445,6 +445,7 @@ class CurrentDecoder(Component):
                 crossbar_bit_lines[j][output] = crossbar_bit_lines[j][output][0] / crossbar_bit_lines[j][output][1]
         return crossbar_bit_lines
 
+
     def decode_binary_crossbar_output(self, crossbar_bit_lines: dict, output_current: torch.Tensor):
         """
         Given the output current, map it to the binary crossbar output that is closest to the output current
@@ -555,6 +556,135 @@ def build_binary_matrix_crossbar(binary_weights: torch.Tensor, n_reset: int = 12
     return crossbar
 
 
+def build_binary_matrix_crossbar_split_into_subsections(
+        binary_weights: torch.Tensor,
+        num_row_splits: int = 1, num_col_splits: int = 1,
+        n_reset: int = 128, t_p_reset=100e-3, set_voltage_difference=1.8):
+    """
+    Given the input of a binary matrix, build a crossbar with the same shape and conductance
+    This specific function also splits the crossbar into subsections - for easy programming
+    :param binary_weights: binary matrix (m, n) where m is the number of rows and n is the number of columns. rows are wordlines (input) and columns are bitlines (output)
+    :param num_row_splits: number of row splits
+    :param num_col_splits: number of column splits
+    :param n_reset: number of reset pulses
+    :param t_p_reset: reset pulse duration
+    :param set_voltage_difference: voltage difference between the two states
+    :return: a 2-D list of crossbars with the same shape and conductance when combined, and a 2-D list of decoders
+    """
+    torch.set_default_dtype(torch.float64)
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    m, n = binary_weights.shape
+
+    full_ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
+    import math
+    num_rows_per_split = math.ceil(m / num_row_splits)
+    num_cols_per_split = math.ceil(n / num_col_splits)
+    crossbars_2d_list = []
+
+    decoder_dicts_2d_list = []
+
+    decoder = CurrentDecoder()
+
+    for row_split in range(num_row_splits):
+        crossbars_1d_list = []
+        decoder_dicts_1d_list = []
+        for col_split in range(num_col_splits):
+            ideal_w = full_ideal_w[col_split*num_cols_per_split:(col_split+1)*num_cols_per_split, row_split*num_rows_per_split:(row_split+1)*num_rows_per_split]
+            crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+
+            for _ in tqdm(range(n_reset)):
+                for i in range(min(num_rows_per_split, m-row_split*num_rows_per_split)):
+                    for j in range(min(num_cols_per_split, n-col_split*num_cols_per_split)):
+                        bit = binary_weights[row_split*num_rows_per_split+i, col_split*num_cols_per_split+j]
+                        v_p_wl = torch.zeros(min(num_rows_per_split, m-row_split*num_rows_per_split))
+                        v_p_bl = torch.zeros(min(num_cols_per_split, n-col_split*num_cols_per_split))
+                        if bit == 1:
+                            v_p_wl[i] = set_voltage_difference/2
+                            v_p_bl[j] = -set_voltage_difference/2
+                        else:
+                            v_p_wl[i] = -set_voltage_difference/2
+                            v_p_bl[j] = set_voltage_difference/2
+                        crossbar.lineres_memristive_programming(v_p_wl, v_p_bl, t_p_reset, order=10, log_power=True)
+            decoder_dict = decoder.calibrate_binary_crossbar_output_current_thresholds(crossbar, binary_weights[row_split*num_rows_per_split:(row_split+1)*num_rows_per_split, col_split*num_cols_per_split:(col_split+1)*num_cols_per_split])
+            crossbars_1d_list.append(crossbar)
+            decoder_dicts_1d_list.append(decoder_dict)
+        crossbars_2d_list.append(crossbars_1d_list)
+        decoder_dicts_2d_list.append(decoder_dicts_1d_list)
+    return crossbars_2d_list, decoder_dicts_2d_list
+
+
+def calculate_vmm_result_split_into_subsection(
+        crossbars_2d_list: list,
+        bit_line_possible_outputs: list,
+        decoder: CurrentDecoder,
+        input_vector: torch.Tensor, twos_complement: bool = True):
+    """
+    Given a 2-D list of crossbars, calculate the VMM result
+    :param crossbars_2d_list: a 2-D list of crossbars
+    :param bit_line_possible_outputs: a 2-D list of possible outputs for each bitline - corresponds to the crossbars_2d_list
+    :param decoder: a decoder object
+    :param input_vector: input vector
+    :param twos_complement: whether the input vector is in two's complement
+    :return: the VMM result - an integer
+    """
+    length_of_input_vector = input_vector.shape[1]
+
+    final_result = 0
+    # calculate the end result of each bit of input (in sequence, with the first bit being the MSB)
+    for bit in range(length_of_input_vector):
+        # Keep track the last row we processed, so we input the correct input vector corresponding to the row we want
+        last_row = 0
+        # Bit result is 0 by default
+        bit_result = 0
+        # Iterate through each row split
+        for row_split in range(len(crossbars_2d_list)):
+            # The number of rows in the crossbar of this row split. This is just default value, it will be updated later
+            m = crossbars_2d_list[row_split][0].m
+            # col_count is for shift and add. For each row split, we start from the rightmost column
+            col_count = 0
+            # Get the input vector corresponding to the crossbar, make sure it's for the correct row
+            # Range of value is from last_row to last_row + m
+            v_wl_applied = input_vector[last_row:last_row + m, bit] * 0.4
+            # Iterate through each column split (col_split will be used as index of crossbar, but from right to left)
+            for col_split in range(len(crossbars_2d_list[row_split])):
+                # we reverse col_split so that we can iterate from right to left
+                col_split_index = len(crossbars_2d_list[row_split]) - col_split - 1
+                # Get the crossbar
+                crossbar = crossbars_2d_list[row_split][col_split_index]
+                # Get the shape of the crossbar
+                m, n = crossbar.m, crossbar.n
+                # input vector to bit lines are always 0, but has shape corresponding to each crossbar
+                v_bl_applied = torch.zeros(n)
+                # Calculate the output of the crossbar
+                x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
+                # Decode the output of the crossbar
+                decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs[row_split][col_split_index], x)
+                # Shift and add the decoded output to the bit result
+                # Iterate through each decoded bit (this is from left to right for each crossbar)
+                for i, decoded_bit in enumerate(decoded):
+                    # If left most crossbar, and is first bit, and we use 2's complement, then we need to subtract
+                    if col_split_index == 0 and i == 0 and twos_complement:
+                        # decoded bit is shifted by multiplying 2 to the power of (col_count + crossbar.n - i)
+                        # where col_count is the total number of bits we have processed before this crossbar
+                        # col_count + crossbar.n is the total number of bits we will have processed after this crossbar
+                        # col_count + crossbar.n - i is the current bit's position
+                        # subtract 1 to make sure the rightmost bit is 2^0
+                        bit_result -= decoded_bit * 2 ** (col_count + crossbar.n - i - 1)
+                    else:
+                        bit_result += decoded_bit * 2 ** (col_count + crossbar.n - i - 1)
+                # Update the col_count, so when we process one crossbar to the left we record num bits already processed
+                col_count += crossbar.n
+            # Update the last row we processed, so we get correct input vector for the next row split
+            last_row += m
+        # Add the bit result to the final result
+        if bit == 0 and twos_complement:
+            final_result -= bit_result * 2 ** (length_of_input_vector - bit - 1)
+        else:
+            final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
+    return final_result.item()
+
 def test_sequential_bit_input_inference_and_power():
     torch.set_default_dtype(torch.float64)
     weights = torch.tensor([
@@ -625,6 +755,44 @@ def calculate_vmm_result(crossbar: LineResistanceCrossbar, bit_line_possible_out
                 bit_result -= decoded_bit * 2 ** (n - i - 1)
             else:
                 bit_result += decoded_bit * 2 ** (n - i - 1)
+        if twos_complement and bit == 0:
+            final_result -= bit_result * 2 ** (length_of_input_vector - bit - 1)
+        else:
+            final_result += bit_result * 2 ** (length_of_input_vector - bit - 1)
+    return final_result.item()
+
+
+def calculate_vmm_result_left_and_right(
+        left_crossbar: LineResistanceCrossbar, right_crossbar: LineResistanceCrossbar,
+        left_bit_line_possible_outputs: dict, right_bit_line_possible_outputs: dict,
+        decoder: CurrentDecoder,
+        input_vector: torch.Tensor, twos_complement: bool = True):
+    length_of_input_vector = input_vector.shape[1]
+    m, n_left, n_right = input_vector.shape[0], left_crossbar.n, right_crossbar.n
+
+    # assume left crossbar contains MSB
+
+    final_result = 0
+    for bit in range(length_of_input_vector):
+        v_wl_applied = input_vector[:, bit] * 0.4
+        v_bl_applied_left = torch.zeros(n_left)
+        v_bl_applied_right = torch.zeros(n_right)
+        left_x = left_crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied_left, log_power=True)
+        right_x = right_crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied_right, log_power=True)
+        # shift and add
+        left_decoded = decoder.decode_binary_crossbar_output(left_bit_line_possible_outputs, left_x)
+        right_decoded = decoder.decode_binary_crossbar_output(right_bit_line_possible_outputs, right_x)
+        bit_result = 0
+
+        for i, decoded_bit in enumerate(left_decoded):
+            if i == 0 and twos_complement:
+                bit_result -= decoded_bit * 2 ** (n_left+n_right - i - 1)
+            else:
+                bit_result += decoded_bit * 2 ** (n_left+n_right - i - 1)
+
+        for i, decoded_bit in enumerate(right_decoded):
+            bit_result += decoded_bit * 2 ** (n_right - i - 1)
+
         if twos_complement and bit == 0:
             final_result -= bit_result * 2 ** (length_of_input_vector - bit - 1)
         else:
@@ -726,19 +894,76 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
         for weight in weights_for_h
     ], dtype=torch.float64)
-    v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=t_p_reset,
-                                     set_voltage_difference=1.8)
-    n_crossbar = build_binary_matrix_crossbar(binary_weights_for_n, n_reset=n_reset, t_p_reset=t_p_reset,
-                                        set_voltage_difference=1.8)
-    m_crossbar = build_binary_matrix_crossbar(binary_weights_for_m, n_reset=n_reset, t_p_reset=t_p_reset,
-                                        set_voltage_difference=1.8)
-    h_crossbar = build_binary_matrix_crossbar(binary_weights_for_h, n_reset=n_reset, t_p_reset=t_p_reset,
-                                        set_voltage_difference=1.8)
+
     decoder = CurrentDecoder()
-    v_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar, binary_weights_for_v)
-    n_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(n_crossbar, binary_weights_for_n)
-    m_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar, binary_weights_for_m)
-    h_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar, binary_weights_for_h)
+
+    v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+        binary_weights_for_v, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+    n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+        binary_weights_for_n, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+    m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+        binary_weights_for_m, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+    h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+        binary_weights_for_h, num_row_splits=2, num_col_splits=2, n_reset=n_reset, t_p_reset=t_p_reset)
+
+    # binary_weights_for_v_left, binary_weights_for_v_right = torch.split(
+    #     binary_weights_for_v, binary_weights_for_v.shape[1] // 2, dim=1)
+    # binary_weights_for_n_left, binary_weights_for_n_right = torch.split(
+    #     binary_weights_for_n, binary_weights_for_n.shape[1] // 2, dim=1)
+    # binary_weights_for_m_left, binary_weights_for_m_right = torch.split(
+    #     binary_weights_for_m, binary_weights_for_m.shape[1] // 2, dim=1)
+    # binary_weights_for_h_left, binary_weights_for_h_right = torch.split(
+    #     binary_weights_for_h, binary_weights_for_h.shape[1] // 2, dim=1)
+    #
+    # v_crossbar_left = build_binary_matrix_crossbar(
+    #     binary_weights_for_v_left,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # v_crossbar_right = build_binary_matrix_crossbar(
+    #     binary_weights_for_v_right,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    #
+    # n_crossbar_left = build_binary_matrix_crossbar(
+    #     binary_weights_for_n_left,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # n_crossbar_right = build_binary_matrix_crossbar(
+    #     binary_weights_for_n_right,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # m_crossbar_left = build_binary_matrix_crossbar(
+    #     binary_weights_for_m_left,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # m_crossbar_right = build_binary_matrix_crossbar(
+    #     binary_weights_for_m_right,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # h_crossbar_left = build_binary_matrix_crossbar(
+    #     binary_weights_for_h_left,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+    # h_crossbar_right = build_binary_matrix_crossbar(
+    #     binary_weights_for_h_right,
+    #     n_reset=n_reset, t_p_reset=t_p_reset, set_voltage_difference=1.8)
+
+    # v_crossbar = build_binary_matrix_crossbar(binary_weights_for_v, n_reset=n_reset, t_p_reset=t_p_reset,
+    #                                  set_voltage_difference=1.8)
+    # n_crossbar = build_binary_matrix_crossbar(binary_weights_for_n, n_reset=n_reset, t_p_reset=t_p_reset,
+    #                                     set_voltage_difference=1.8)
+    # m_crossbar = build_binary_matrix_crossbar(binary_weights_for_m, n_reset=n_reset, t_p_reset=t_p_reset,
+    #                                     set_voltage_difference=1.8)
+    # h_crossbar = build_binary_matrix_crossbar(binary_weights_for_h, n_reset=n_reset, t_p_reset=t_p_reset,
+    #                                     set_voltage_difference=1.8)
+
+    # v_left_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar_left, binary_weights_for_v)
+    # v_right_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar_right, binary_weights_for_v)
+    # n_left_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(n_crossbar_left, binary_weights_for_n)
+    # n_right_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(n_crossbar_right, binary_weights_for_n)
+    # m_left_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar_left, binary_weights_for_m)
+    # m_right_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar_right, binary_weights_for_m)
+    # h_left_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar_left, binary_weights_for_h)
+    # h_right_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar_right, binary_weights_for_h)
+
+    # v_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(v_crossbar, binary_weights_for_v)
+    # n_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(n_crossbar, binary_weights_for_n)
+    # m_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar, binary_weights_for_m)
+    # h_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar, binary_weights_for_h)
+
     V = -10
     n = 0
     m = 0
@@ -811,10 +1036,21 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
             convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
             for weight in h_input
         ], dtype=torch.float64)
-        V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
-        n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
-        m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
-        h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
+
+        V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
+        n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
+        m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
+        h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
+
+        # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
+        # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
+        # m_result = calculate_vmm_result_left_and_right(m_crossbar_left, m_crossbar_right, m_left_bit_line_possible_outputs, m_right_bit_line_possible_outputs, decoder, m_binary_input)
+        # h_result = calculate_vmm_result_left_and_right(h_crossbar_left, h_crossbar_right, h_left_bit_line_possible_outputs, h_right_bit_line_possible_outputs, decoder, h_binary_input)
+
+        # V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
+        # n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
+        # m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
+        # h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
 
         # only take last "2n" digits
         # V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
@@ -859,7 +1095,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         if h < 0:
             h = 0
         t += dt
-        print(t, V, n, m, h)
+        print(t, V, n, m, h, I)
     # Plot the results, in 4 subplots
     plt.subplot(2, 2, 1)
     plt.title("n")
@@ -889,7 +1125,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=5, T=5, t_p_reset=10000)
+    calculate_HH_neuron_model(n_reset=100, T=5, t_p_reset=100)
 
 if __name__ == "__main__":
     main()
