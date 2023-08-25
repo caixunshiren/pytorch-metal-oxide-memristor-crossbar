@@ -25,7 +25,6 @@ _[Memristor model wise]_
 - Nonlinear I-V curve
 - Nonlinear conductance change
 - Set/Reset asymmetry, stuck devices
-- Nonlinear conductance change
 - Thermal effect
 
 _[Crossbar wise]_
@@ -61,7 +60,8 @@ pip install -r requirements.txt
 
 `main.py` provides some example functions to play around the crossbar.
 
-**[Memristor]**
+#### **Memristor**
+
 A memristor is a resistive memory device that is programmable. 
 We implemented the memristor according to the model in [[1]][1].
 The current implementation has 4 types of memristors, and a single memristor element can be imported as follows:
@@ -77,7 +77,7 @@ The following parameters define a memristor:
 
 ```
 # user set parameters
-self.g_0 = g_0  # initial, ideal conductance in S. Typically, 1-100 uS is used.
+self.g_0 = g_0  # initial, ideal conductance in S. Typically, 3.16-316 uS is used.
 self.t = None   # operating temperature
 self.f = None   # operating frequency
 
@@ -100,7 +100,8 @@ The following are the functions supported in a static memristor:
 ```
 __init__(self, g_0): initialize a static memristor, given the initial conductance
 calibrate(self, t, f): calibrate the memristor at a given temperature and frequency, this must be done before running inference
-inference(self, v): given a voltage, calculate the current
+noise_free_dc_iv_curve(self, v): given a voltage, calculate the current with non-linearity only (noise free)
+inference(self, v): given a voltage, calculate the current with non-linearity and non-idealities included
 ```
 
 Dynamic memristor supports two additional functions:
@@ -110,8 +111,77 @@ set(self, V_p, t_p): given a programming voltage and time, set the memristor (in
 reset(self, V_p, t_p): given a programming voltage and time, reset the memristor (decrease conductance)
 ```
 
+**Table 1: Typical Ranges of Parameters:**
 
+| Parameter | Type                      | Typical Range   | Code                  |
+|-----------|---------------------------|-----------------|-----------------------|
+| `g_0`     | Initial conductance       | 3.16 - 316 uS   | `3.16e-6` - `3.16e-4` |
+| `t`       | Operating Temperature     | 300 - 400 K     | `300` - `375`         |
+| `f`       | Operating Frequency       | 1 - 1000 MHz    | `1e6` - `1e9`         |
+| `v`       | Inference Voltage         | -0.4 - 0.4 V    | `-0.4` - `0.4`        |
+| `V_p`     | Programming Voltage (SET) | -0.8 - -1.5 V   | `-0.8` - `-1.5`       |
+| `V_p`     | Programming Voltage (RESET) | 0.8 - 1.15 V    | `0.8` - `1.15`        |
+| `t_p`     | Programming Time          | 100 ns - 100 ms | `1e-7` - `1e-1`       |
 
+`DynamicMemristorFreeRange` and `DynamicMemristorStuck`:
+
+When programming the conductance towards the range limit, the DynamicMemristor will stop updating if it reaches the extreme.
+This is because the model is only accurate for interpolation between the 3.16 - 316 uS range. 
+We support two additional models depending on the desired simulation behavior.
+
+`DynamicMemristorFreeRange` allows the memristor to go beyond the range limit while fidelity is not guaranteed.
+
+`DynamicMemristorStuck` stuck the memristor at the extreme to simulate stuck devices.
+
+**Example Code:**
+
+Inference using a StaticMemristor:
+
+```
+from memristor.devices import StaticMemristor
+
+frequency = 1e8  # hz
+temperature = 60+273  # Kelvin
+g_0 = 50e-6  # S
+v = 0.3  # V
+memristor = StaticMemristor(g_0)
+memristor.calibrate(temperature, frequency)
+print("ideal naive linear estimate:", v * g_0)
+print("ideal naive non-linear estimate:", memristor.noise_free_dc_iv_curve(v))
+print("actual device inference:", memristor.inference(v))
+```
+
+Programming using a DynamicMemristor:
+
+```
+from memristor.devices import DynamicMemristor
+
+v_p = 1.0 # range [−0.8 V to −1.5 V]/[0.8 V to 1.15 V] RESET/SET
+t_p = 0.5e-3 # programming pulse duration
+g_0 = 60e-6
+frequency = 1e8  # hz
+temperature = 273 + 60  # Kelvin
+OPERATION = "SET"  # "SET" or "RESET"
+iterations = 10
+
+memristor = DynamicMemristor(g_0)
+memristor.calibrate(temperature, frequency)
+conductances = [memristor.g_0]
+for i in range(iterations-1):
+    if OPERATION == "SET":
+        memristor.set(v_p, t_p)
+    elif OPERATION == "RESET":
+        memristor.reset(v_p, t_p)
+    else:
+        raise ValueError("UNKNOWN OPERATION")
+    conductances.append(memristor.g_0)
+plt.plot(range(1, iterations+1), conductances)
+plt.show()
+```
+
+Example I-V/Device programming Plots: 
+
+Checkout `Notebooks/single device sim.ipynb`.
 
 [1]: https://ieeexplore.ieee.org/abstract/document/9047174
 [2]: https://ieeexplore.ieee.org/document/6473873
