@@ -74,7 +74,7 @@ def plot_crossbar(crossbar, v_wl_applied, v_bl_applied):
     # plot output current
     out = torch.stack([crossbar.ideal_vmm(v_wl_applied), crossbar.naive_linear_memristive_vmm(v_wl_applied),
                         crossbar.naive_memristive_vmm(v_wl_applied),
-                       crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=1)],
+                       crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, order=1)],
                       dim=1)
     out = torch.t(out)
     plt.matshow(out)
@@ -138,7 +138,7 @@ def plot_crossbar(crossbar, v_wl_applied, v_bl_applied):
     plt.show()
 
 def plot_voltage_drop(crossbar, v_wl_applied, v_bl_applied):
-    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, iter=1)
+    crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, order=1)
     M = torch.t(crossbar.cache["V_wl"]-crossbar.cache["V_bl"])
     im = plt.imshow(M,
                     interpolation='none', aspect='equal')
@@ -270,7 +270,7 @@ def fig3():
     crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
     #v_applied = torch.tensor([-0.2, 0.3], dtype=torch.float64)
     v_wl_applied = torch.concat([1.8*torch.ones(4,), torch.linspace(1.8, 1.4,12)], dim=0)#torch.FloatTensor(32,).uniform_(-0.4, 0.4).double()
-    v_bl_applied = 0*torch.concat([torch.linspace(1.6, 2.7,16), 2.7*torch.ones(16,),torch.linspace(2.7, 1.6,16)], dim=0) #1.7*torch.ones(48,)#torch.zeros(32, )
+    v_bl_applied = 0*torch.concat([torch.linspace(1.6, 2.7,16), 2.7*torch.ones(16,), torch.linspace(2.7, 1.6,16)], dim=0) #1.7*torch.ones(48,)#torch.zeros(32, )
 
     #print("ideal vmm:", crossbar.ideal_vmm(v_applied))
     #print("naive linear memristive vmm:", crossbar.naive_linear_memristive_vmm(v_applied))

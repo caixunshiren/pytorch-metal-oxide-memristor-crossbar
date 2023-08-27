@@ -20,6 +20,7 @@ class LineResistanceCrossbar:
         :param memristor_model: memristor model class
         :param memristor_params: dictionary of the model param
         :param ideal_w: (n,m) numpy/torch matrix of ideal conductances be programed
+        :param crossbar_params: dictionary of the crossbar parameters
         """
         self.memristor_model = memristor_model
         self.memristor_params = memristor_params
@@ -262,7 +263,7 @@ class LineResistanceCrossbar:
         return torch.cat([maked(j) for j in range(0,n)], dim=0)
 
     def lineres_memristive_programming(self, v_wl_applied, v_bl_applied, pulse_dur, order=1,
-                                       crossbar_cache=True, cap=True, log_power=False):
+                                       crossbar_cache=True, cap=True, log_power=False, threshold=0.8):
         """
         vmm with non-ideal memristor inference and ideal crossbar
         dims:
@@ -276,6 +277,7 @@ class LineResistanceCrossbar:
         :param crossbar_cache: whether cache useful statistics
         :param cap: if True, voltage will be capped at +-0.4 v for approximating conductance.
         :param log_power: If the power of the VMM is logged
+        :param threshold: threshold for the potential difference to be considered as a programming pulse
         :return: (n,) analog current vector
         """
         if self.memristor_model is not DynamicMemristor and self.memristor_model is not DynamicMemristorFreeRange\
@@ -297,7 +299,6 @@ class LineResistanceCrossbar:
         V_diff = V_wl - V_bl
         for i in range(self.n):
             for j in range(self.m):
-                threshold = 1.0
                 if V_diff[i,j] > threshold:
                     self.memristors[i][j].set(V_diff[i,j], pulse_dur)
                 elif V_diff[i,j] < -threshold:
