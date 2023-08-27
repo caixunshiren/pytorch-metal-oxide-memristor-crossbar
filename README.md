@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 `main.py` provides some example functions to play around the crossbar.
 
-#### **Memristor**
+#### 1. **Memristor**
 
 A memristor is a resistive memory device that is programmable. 
 We implemented the memristor according to the model in [[1]][1].
@@ -182,6 +182,173 @@ plt.show()
 Example I-V/Device programming Plots: 
 
 Checkout `Notebooks/single device sim.ipynb`.
+
+
+#### 2. **Crossbar**
+
+A crossbar is a 2D array of memristors connected by wordlines and bitlines. 
+VMM can be performed using Kirchoff's law and Ohm's law. 
+Due to existence of line resistance, the real VMM circuit is more complicated than a simple matrix multiplication.
+
+The crossbar module implements a 0T1R passive crossbar that supports inference and programming. 
+A resistive [crossbar model][2] is used to calculate voltage at each point of the device.
+
+To use a crossbar, import from
+
+```
+from memristor.crossbar.model import LineResistanceCrossbar
+```
+
+The following parameters define a crossbar:
+
+```
+memristor_model: memristor model class
+memristor_params: dictionary of the memristor model param, this depends on the memristor model
+ideal_w: (n,m) numpy/torch matrix of ideal conductances be programed. Size of crossbar depends on this matrix
+crossbar_params: dictionary of crossbar parameters
+```
+
+See `memristor.crossbar.model.initialize_memristor` to see how memristor parameters are used or implement your own 
+`initialize_memristor` for your custom memristor model. 
+Table 2 shows all the `crossbar_params` and their recommended values.
+
+**Table 2: Crossbar Parameters:**
+
+| Name            | Desription                        | Typical Value                | Code        |
+|-----------------|-----------------------------------|------------------------------|-------------|
+| `r_wl`          | Wordline resistance               | 20 ohm                       | `20`        |
+| `r_bl`          | Bitline resistance                | 20 ohm                       | `20`        |
+| `r_in`          | Input sensing circuit resistance  | 10 ohm                       | `20`        |
+| `r_out`         | Output Sensing circuit resistance | 10 ohm                       | `20`        |
+| `V_SOURCE_MODE` | Discussed below                   | Single/double/3 quater sided | shown below |
+
+`V_SOURCE_MODE` defines how the input voltage is applied to the crossbar. 
+It can be either applied one side of bitline and wordline, both sides of bitline and wordline, or 2 sides for wordline and 1 side for bitline.
+Depending on the application, applying from both sides can mitigate effect of line resistance, while increasing the power consumption and circuit complexity.
+
+`V_SOURCE_MODE` can be set to one of the following:
+
+```
+V_SOURCE_MODE = "SINGLE_SIDE" or "|_"  # single sided
+V_SOURCE_MODE = "DOUBLE_SIDE" or "|=|"  # double sided
+V_SOURCE_MODE = "THREE_QUATER_SIDE" or "|_|"  # 3 quarter sided
+```
+
+We demonstrate the crossbar functions with a toy example. Below is an example of a crossbar with 16x16 memristors.
+
+To initialize a crossbar:
+```
+torch.set_default_dtype(torch.float64)
+
+crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in':10, 'r_out':10, 'V_SOURCE_MODE':'|_|'}
+memristor_model = StaticMemristor
+memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+ideal_w = torch.FloatTensor(16, 16).uniform_(10, 300).double()*1e-6
+
+crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+```
+
+To perform VMM:
+```
+v_wl_applied = torch.FloatTensor(16,).uniform_(0, 0.4).double()
+v_bl_applied = torch.zeros(16, ).double()
+x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, order=1)
+```
+
+_***About the `order` parameter:_ 
+
+The way we calculate the voltage at each point of the crossbar is by solving a linear system of equations.
+Therefore, we assume that each memristor is a perfect linear resistor, and we use its `g_linfit` to calculate the voltage.
+If we increase the order to 2, then we will run inference with the calculated voltage and recalculate a better `g_linfit`.
+This process can be repeated for `order` number of times to converge to a better simulation fidelity. 
+For default cases, `order=1` is sufficient.
+
+To program the crossbar:
+```
+n_reset = 40
+t_p_reset = 0.5e-3
+v_p_bl = 1.5 * torch.cat([torch.linspace(1, 1.2, 16)], dim=0)
+for j in tqdm(range(n_reset)):
+    crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset, threshold=0.8)
+```
+
+The above example applies reset to all the memristors using `crossbar.lineres_memristive_programming`. 
+Performing set and reset depends on the voltage difference at each terminal of the memristors. 
+In this case, since the wordline voltage is 0 and bitline voltage is non-zero, all the memristors will be reset.
+Only voltage difference with magnitude greater than 0.8 V will have the memristor be programmed.
+By default, `threshold=0.8` for `crossbar.lineres_memristive_programming`.
+To perform programming of a single memristor, we can the a row by row or column by column scheme where we make sure
+all other memristors have voltage differences below the threshold. 
+
+**Example Code:**
+
+Test Inference:
+
+```
+def test_inference():
+    torch.set_default_dtype(torch.float64)
+
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    # ideal_w = torch.tensor([[50, 100],[75, 220],[30, 80]], dtype=torch.float64)*1e-6
+    ideal_w = torch.ones([48, 16])*65e-6
+
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    # randomize weights
+    n_reset = 40
+    t_p_reset = 0.5e-3
+    v_p_bl = 1.5 * torch.cat([torch.linspace(1, 1.2, 16), 1.2 * torch.ones(16, ),
+                              torch.linspace(1.2, 1, 16)], dim=0)
+    for j in tqdm(range(n_reset)):
+        crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset)
+
+    decoder = CurrentDecoder()
+    v_wl_applied = 0.3*(torch.randint(low=0, high=2, size=[16,]))+0.1
+    print("input", v_wl_applied)
+    v_bl_applied = torch.zeros(48)
+    t = decoder.calibrate_t(crossbar, 100)
+    print("threshold", t)
+    x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied)
+    print("raw output", x)
+    print("naive binarization", decoder.apply(x))
+    print("fitted binarization", decoder.apply(x, t))
+
+```
+
+Power consumption tracking is supported. See Test Power:
+
+```
+def test_power():
+    torch.set_default_dtype(torch.float64)
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    ideal_w = torch.ones([48, 16])*65e-6
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    # randomize weights
+    n_reset = 40
+    t_p_reset = 0.5e-3
+    v_p_bl = 1.5 * torch.cat([torch.linspace(1, 1.2, 16), 1.2 * torch.ones(16, ),
+                              torch.linspace(1.2, 1, 16)], dim=0)
+    for j in tqdm(range(n_reset)):
+        crossbar.lineres_memristive_programming(torch.zeros(16, ), v_p_bl, t_p_reset, log_power=True)
+
+    decoder = CurrentDecoder()
+    v_wl_applied = 0.3*(torch.randint(low=0, high=2, size=[16,]))+0.1
+    print("input", v_wl_applied)
+    v_bl_applied = torch.zeros(48)
+    x = crossbar.lineres_memristive_vmm(v_wl_applied, v_bl_applied, log_power=True)
+    print("power:")
+    for ticket in crossbar.power_log:
+        print(f"{ticket.name} - {ticket.op_type}")
+        print("Total Power:", ticket.power_total)
+        print("Memristor Power:", ticket.power_memristor)
+        print("Word Line Power:", ticket.power_wordline)
+        print("Bit Line Power:", ticket.power_bitline)
+```
+
+
 
 [1]: https://ieeexplore.ieee.org/abstract/document/9047174
 [2]: https://ieeexplore.ieee.org/document/6473873
