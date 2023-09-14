@@ -76,7 +76,7 @@ class VMMEngine:
 
 class BinarySemiPassiveVMMEngine:
 
-    def __init__(self):
+    def __init__(self, int_bits, frac_bits, adc_class):
         pass
 
     def build_crossbar(self, crossbar):
