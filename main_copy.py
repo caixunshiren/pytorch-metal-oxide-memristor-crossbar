@@ -869,7 +869,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         -0.01 * dt * 10,
         0.01 * dt,
         -0.125 * dt,
-        1
+        1,
+        dt
     ])
     binary_weights_for_n = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -881,7 +882,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         -0.1 * dt * 25,
         0.1 * dt,
         -4 * dt,
-        1
+        1,
+        dt
     ])
     binary_weights_for_m = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -891,7 +893,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         0.07 * dt,
         -0.07 * dt,
         dt,
-        1
+        1,
+        dt
     ])
     binary_weights_for_h = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -992,6 +995,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         theoretical_m = 0
         theoretical_h = 0
         while t < T:
+            random_number_std_dev = 0.1
             t_list.append(t)
             V_list.append(V)
             n_list.append(n)
@@ -1012,7 +1016,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 n / (exp((10 - V) / 10) - 1),
                 n * V / (exp((10 - V) / 10) - 1),
                 exp(-V / 80) * n,
-                n
+                n,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             m_input = torch.tensor([
                 1 / (exp((25 - V) / 10) - 1),
@@ -1020,13 +1025,15 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 m / (exp((25 - V) / 10) - 1),
                 m * V / (exp((25 - V) / 10) - 1),
                 exp(-V / 18) * m,
-                m
+                m,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             h_input = torch.tensor([
                 exp(-V / 20),
                 h * exp(-V / 20),
                 h / (exp((30 - V) / 10) + 1),
-                h
+                h,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             # clamp all input to -2**int_bits, 2**int_bits - 1
             v_input = torch.clamp(v_input, -2**int_bits, 2**int_bits - 1)
@@ -1115,7 +1122,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 theoretical_n / (exp((10 - theoretical_V) / 10) - 1),
                 theoretical_n * theoretical_V / (exp((10 - theoretical_V) / 10) - 1),
                 exp(-theoretical_V / 80) * theoretical_n,
-                theoretical_n
+                theoretical_n,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             theoretical_m_input = torch.tensor([
                 1 / (exp((25 - theoretical_V) / 10) - 1),
@@ -1123,13 +1131,15 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 theoretical_m / (exp((25 - theoretical_V) / 10) - 1),
                 theoretical_m * theoretical_V / (exp((25 - theoretical_V) / 10) - 1),
                 exp(-theoretical_V / 18) * theoretical_m,
-                theoretical_m
+                theoretical_m,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             theoretical_h_input = torch.tensor([
                 exp(-theoretical_V / 20),
                 theoretical_h * exp(-theoretical_V / 20),
                 theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
-                theoretical_h
+                theoretical_h,
+                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
 
             theoretical_V = torch.dot(theoretical_v_input.double(), weights_for_v.double()).item()
@@ -1232,7 +1242,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=1, T=0.5, t_p_reset=100e-3, num_paths=5)
+    calculate_HH_neuron_model(n_reset=0, T=1.5, t_p_reset=100e-3, num_paths=1)
 
 if __name__ == "__main__":
     main()
