@@ -577,7 +577,10 @@ def build_binary_matrix_crossbar_split_into_subsections(
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
     m, n = binary_weights.shape
 
-    full_ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
+    # full_ideal_w = torch.ones([n, m]) * 65e-6  # shape is [number_of_cols, number_of_rows]
+    # This time we initialize ideal_w to be what we want
+    # full_ideal_w = binary_weights transpose, from 3.16e-6 <= self.g_0 <= 316e-6
+    full_ideal_w = binary_weights.transpose(0, 1).clone() * (316e-6 - 3.16e-6) + 3.16e-6
     import math
     num_rows_per_split = math.ceil(m / num_row_splits)
     num_cols_per_split = math.ceil(n / num_col_splits)
@@ -1078,6 +1081,14 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         m = m_result
         h = h_result
 
+        # expected_V is dot product of v_input and v_weights
+        # RuntimeError: dot : expected both vectors to have same dtype, but found Long and Double
+        expected_V = torch.dot(v_input.double(), weights_for_v.double()).item()
+        expected_n = torch.dot(n_input.double(), weights_for_n.double()).item()
+        expected_m = torch.dot(m_input.double(), weights_for_m.double()).item()
+        expected_h = torch.dot(h_input.double(), weights_for_h.double()).item()
+
+
         if V > 256:
             V = 256
         if V < -256:
@@ -1095,7 +1106,12 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         if h < 0:
             h = 0
         t += dt
-        print(t, V, n, m, h, I)
+        print(t)
+        print("\t", V, expected_V)
+        print("\t", n, expected_n)
+        print("\t", m, expected_m)
+        print("\t", h, expected_h)
+        print("\t", I)
     # Plot the results, in 4 subplots
     plt.subplot(2, 2, 1)
     plt.title("n")
@@ -1125,7 +1141,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=100, T=5, t_p_reset=100)
+    calculate_HH_neuron_model(n_reset=1, T=2, t_p_reset=100)
 
 if __name__ == "__main__":
     main()
