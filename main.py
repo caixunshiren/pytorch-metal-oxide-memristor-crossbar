@@ -379,9 +379,30 @@ def test_power():
         print("Word Line Power:", ticket.power_wordline)
         print("Bit Line Power:", ticket.power_bitline)
 
+def test_register_weights():
+    torch.set_default_dtype(torch.float64)
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_'}
+    memristor_model = DynamicMemristorStuck
+    memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
+    ideal_w = torch.ones([2, 3])*1e-5
+    crossbar = LineResistanceCrossbar(memristor_model, memristor_params, ideal_w, crossbar_params)
+    print("--------- initialized weights:")
+    print("ideal:", crossbar.ideal_w)
+    print("fitted:", crossbar.fitted_w)
+    print("memristor g_0:", [[crossbar.memristors[i][j].g_0 for j in range(ideal_w.shape[1])]
+                             for i in range(ideal_w.shape[0])])
+    new_weights = torch.Tensor([[1,2,3], [4,5,6]])*1e-5
+    crossbar.register_weights(new_weights)
+    print("--------- registered weights:")
+    print("ideal:", crossbar.ideal_w)
+    print("fitted:", crossbar.fitted_w)
+    print("memristor g_0:", [[crossbar.memristors[i][j].g_0 for j in range(ideal_w.shape[1])]
+                             for i in range(ideal_w.shape[0])])
+
 def main():
     # test_power()
-    fig3()
+    # fig3()
+    test_register_weights()
 
 
 if __name__ == "__main__":

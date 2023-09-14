@@ -75,6 +75,19 @@ class LineResistanceCrossbar:
         # Power log
         self.power_log = []
 
+    def register_weights(self, w):
+        """
+        register weight to the crossbar (g0 of memristors)
+        :param w: (n,m) torch tensor
+        """
+        assert w.shape == self.ideal_w.shape, "weight shape mismatch for the crossbar size"
+        self.ideal_w = torch.clone(w)
+        for i in range(self.n):
+            for j in range(self.m):
+                self.memristors[i][j].g_0 = self.ideal_w[i, j]
+                self.recalibrate(i, j)  # recalibrate the memristor at index i,j
+        self.cache = {}
+
     def recalibrate(self, i, j):
         """
         this function should be called every time the i,j th memristor get programmed
