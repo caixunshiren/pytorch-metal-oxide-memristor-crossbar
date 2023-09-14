@@ -831,7 +831,7 @@ def convert_to_binary_array(number, int_bits, fraction_bits, adjust_for_multipli
     return binary_array
 
 
-def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_reset=1024, t_p_reset=100e-3):
+def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_reset=1024, t_p_reset=100e-3, num_paths=1):
     """
     Calculate and plot the result of a Hodgkin-Huxley neuron model
     :param dt: time step
@@ -907,7 +907,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
         binary_weights_for_m, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_h, num_row_splits=2, num_col_splits=2, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_h, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
 
     # binary_weights_for_v_left, binary_weights_for_v_right = torch.split(
     #     binary_weights_for_v, binary_weights_for_v.shape[1] // 2, dim=1)
@@ -967,151 +967,240 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
     # m_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(m_crossbar, binary_weights_for_m)
     # h_bit_line_possible_outputs = decoder.calibrate_binary_crossbar_output_current_thresholds(h_crossbar, binary_weights_for_h)
 
-    V = -10
-    n = 0
-    m = 0
-    h = 0
-    I = 10
+    master_t_list = []
+    master_V_list = []
+    master_n_list = []
+    master_m_list = []
+    master_h_list = []
 
-    t = 0
-    t_list = []
-    V_list = []
-    n_list = []
-    m_list = []
-    h_list = []
+    for _ in range(num_paths):
+        V = 0
+        n = 0
+        m = 0
+        h = 0
+        I = 10
 
-    while t < T:
-        t_list.append(t)
-        V_list.append(V)
-        n_list.append(n)
-        m_list.append(m)
-        h_list.append(h)
-        v_input = torch.tensor([
-            I,
-            n**4 * V,
-            n**4,
-            m**3 * h * V,
-            m**3 * h,
-            V,
-            1
-        ])
-        n_input = torch.tensor([
-            1 / (exp((10 - V) / 10) - 1),
-            V / (exp((10 - V) / 10) - 1),
-            n / (exp((10 - V) / 10) - 1),
-            n * V / (exp((10 - V) / 10) - 1),
-            exp(-V / 80) * n,
-            n
-        ])
-        m_input = torch.tensor([
-            1 / (exp((25 - V) / 10) - 1),
-            V / (exp((25 - V) / 10) - 1),
-            m / (exp((25 - V) / 10) - 1),
-            m * V / (exp((25 - V) / 10) - 1),
-            exp(-V / 18) * m,
-            m
-        ])
-        h_input = torch.tensor([
-            exp(-V / 20),
-            h * exp(-V / 20),
-            h / (exp((30 - V) / 10) + 1),
-            h
-        ])
-        # clamp all input to -2**int_bits, 2**int_bits - 1
-        v_input = torch.clamp(v_input, -2**int_bits, 2**int_bits - 1)
-        n_input = torch.clamp(n_input, -2**int_bits, 2**int_bits - 1)
-        m_input = torch.clamp(m_input, -2**int_bits, 2**int_bits - 1)
-        h_input = torch.clamp(h_input, -2**int_bits, 2**int_bits - 1)
+        t = 0
+        t_list = []
+        V_list = []
+        n_list = []
+        m_list = []
+        h_list = []
 
-        v_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-            for weight in v_input
-        ], dtype=torch.float64)
-        n_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-            for weight in n_input
-        ], dtype=torch.float64)
-        m_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-            for weight in m_input
-        ], dtype=torch.float64)
-        h_binary_input = torch.tensor([
-            convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-            for weight in h_input
-        ], dtype=torch.float64)
+        theoretical_V = 0
+        theoretical_n = 0
+        theoretical_m = 0
+        theoretical_h = 0
+        while t < T:
+            t_list.append(t)
+            V_list.append(V)
+            n_list.append(n)
+            m_list.append(m)
+            h_list.append(h)
+            v_input = torch.tensor([
+                I,
+                n**4 * V,
+                n**4,
+                m**3 * h * V,
+                m**3 * h,
+                V,
+                1
+            ])
+            n_input = torch.tensor([
+                1 / (exp((10 - V) / 10) - 1),
+                V / (exp((10 - V) / 10) - 1),
+                n / (exp((10 - V) / 10) - 1),
+                n * V / (exp((10 - V) / 10) - 1),
+                exp(-V / 80) * n,
+                n
+            ])
+            m_input = torch.tensor([
+                1 / (exp((25 - V) / 10) - 1),
+                V / (exp((25 - V) / 10) - 1),
+                m / (exp((25 - V) / 10) - 1),
+                m * V / (exp((25 - V) / 10) - 1),
+                exp(-V / 18) * m,
+                m
+            ])
+            h_input = torch.tensor([
+                exp(-V / 20),
+                h * exp(-V / 20),
+                h / (exp((30 - V) / 10) + 1),
+                h
+            ])
+            # clamp all input to -2**int_bits, 2**int_bits - 1
+            v_input = torch.clamp(v_input, -2**int_bits, 2**int_bits - 1)
+            n_input = torch.clamp(n_input, -2**int_bits, 2**int_bits - 1)
+            m_input = torch.clamp(m_input, -2**int_bits, 2**int_bits - 1)
+            h_input = torch.clamp(h_input, -2**int_bits, 2**int_bits - 1)
 
-        V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
-        n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
-        m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
-        h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
+            v_binary_input = torch.tensor([
+                convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                for weight in v_input
+            ], dtype=torch.float64)
+            n_binary_input = torch.tensor([
+                convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                for weight in n_input
+            ], dtype=torch.float64)
+            m_binary_input = torch.tensor([
+                convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                for weight in m_input
+            ], dtype=torch.float64)
+            h_binary_input = torch.tensor([
+                convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                for weight in h_input
+            ], dtype=torch.float64)
 
-        # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
-        # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
-        # m_result = calculate_vmm_result_left_and_right(m_crossbar_left, m_crossbar_right, m_left_bit_line_possible_outputs, m_right_bit_line_possible_outputs, decoder, m_binary_input)
-        # h_result = calculate_vmm_result_left_and_right(h_crossbar_left, h_crossbar_right, h_left_bit_line_possible_outputs, h_right_bit_line_possible_outputs, decoder, h_binary_input)
+            V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
+            n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
+            m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
+            h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
 
-        # V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
-        # n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
-        # m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
-        # h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
+            # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
+            # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
+            # m_result = calculate_vmm_result_left_and_right(m_crossbar_left, m_crossbar_right, m_left_bit_line_possible_outputs, m_right_bit_line_possible_outputs, decoder, m_binary_input)
+            # h_result = calculate_vmm_result_left_and_right(h_crossbar_left, h_crossbar_right, h_left_bit_line_possible_outputs, h_right_bit_line_possible_outputs, decoder, h_binary_input)
 
-        # only take last "2n" digits
-        # V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        # n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        # m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-        # h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+            # V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
+            # n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
+            # m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
+            # h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
 
-        # divide number by 2**(2 * fraction_bits), and minus 2**int_bits twice if leading bit is 1
-        # if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-        #     V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        # if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-        #     n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        # if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-        #     m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-        # if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-        #     h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+            # only take last "2n" digits
+            # V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+            # n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+            # m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
+            # h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
 
-        V_result = V_result / (2 ** (2 * fraction_bits))
-        n_result = n_result / (2 ** (2 * fraction_bits))
-        m_result = m_result / (2 ** (2 * fraction_bits))
-        h_result = h_result / (2 ** (2 * fraction_bits))
+            # divide number by 2**(2 * fraction_bits), and minus 2**int_bits twice if leading bit is 1
+            # if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            #     V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+            # if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            #     n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+            # if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            #     m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
+            # if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
+            #     h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
 
-        V = V_result
-        n = n_result
-        m = m_result
-        h = h_result
+            V_result = V_result / (2 ** (2 * fraction_bits))
+            n_result = n_result / (2 ** (2 * fraction_bits))
+            m_result = m_result / (2 ** (2 * fraction_bits))
+            h_result = h_result / (2 ** (2 * fraction_bits))
 
-        # expected_V is dot product of v_input and v_weights
-        # RuntimeError: dot : expected both vectors to have same dtype, but found Long and Double
-        expected_V = torch.dot(v_input.double(), weights_for_v.double()).item()
-        expected_n = torch.dot(n_input.double(), weights_for_n.double()).item()
-        expected_m = torch.dot(m_input.double(), weights_for_m.double()).item()
-        expected_h = torch.dot(h_input.double(), weights_for_h.double()).item()
+            V = V_result
+            n = n_result
+            m = m_result
+            h = h_result
+
+            # expected_V is dot product of v_input and v_weights
+            # RuntimeError: dot : expected both vectors to have same dtype, but found Long and Double
+            expected_V = torch.dot(v_input.double(), weights_for_v.double()).item()
+            expected_n = torch.dot(n_input.double(), weights_for_n.double()).item()
+            expected_m = torch.dot(m_input.double(), weights_for_m.double()).item()
+            expected_h = torch.dot(h_input.double(), weights_for_h.double()).item()
+
+            # Theoretical, start from scratch ignoring previous values
+            theoretical_v_input = torch.tensor([
+                I,
+                theoretical_n ** 4 * theoretical_V,
+                theoretical_n ** 4,
+                theoretical_m ** 3 * theoretical_h * theoretical_V,
+                theoretical_m ** 3 * theoretical_h,
+                theoretical_V,
+                1
+            ])
+            theoretical_n_input = torch.tensor([
+                1 / (exp((10 - theoretical_V) / 10) - 1),
+                theoretical_V / (exp((10 - theoretical_V) / 10) - 1),
+                theoretical_n / (exp((10 - theoretical_V) / 10) - 1),
+                theoretical_n * theoretical_V / (exp((10 - theoretical_V) / 10) - 1),
+                exp(-theoretical_V / 80) * theoretical_n,
+                theoretical_n
+            ])
+            theoretical_m_input = torch.tensor([
+                1 / (exp((25 - theoretical_V) / 10) - 1),
+                theoretical_V / (exp((25 - theoretical_V) / 10) - 1),
+                theoretical_m / (exp((25 - theoretical_V) / 10) - 1),
+                theoretical_m * theoretical_V / (exp((25 - theoretical_V) / 10) - 1),
+                exp(-theoretical_V / 18) * theoretical_m,
+                theoretical_m
+            ])
+            theoretical_h_input = torch.tensor([
+                exp(-theoretical_V / 20),
+                theoretical_h * exp(-theoretical_V / 20),
+                theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
+                theoretical_h
+            ])
+
+            theoretical_V = torch.dot(theoretical_v_input.double(), weights_for_v.double()).item()
+            theoretical_n = torch.dot(theoretical_n_input.double(), weights_for_n.double()).item()
+            theoretical_m = torch.dot(theoretical_m_input.double(), weights_for_m.double()).item()
+            theoretical_h = torch.dot(theoretical_h_input.double(), weights_for_h.double()).item()
 
 
-        if V > 256:
-            V = 256
-        if V < -256:
-            V = -256
-        if n > 1:
-            n = 1
-        if m > 1:
-            m = 1
-        if h > 1:
-            h = 1
-        if n < 0:
-            n = 0
-        if m < 0:
-            m = 0
-        if h < 0:
-            h = 0
-        t += dt
-        print(t)
-        print("\t", V, expected_V)
-        print("\t", n, expected_n)
-        print("\t", m, expected_m)
-        print("\t", h, expected_h)
-        print("\t", I)
+            if V > 256:
+                V = 256
+            if V < -256:
+                V = -256
+            if n > 1:
+                n = 1
+            if m > 1:
+                m = 1
+            if h > 1:
+                h = 1
+            if n < 0:
+                n = 0
+            if m < 0:
+                m = 0
+            if h < 0:
+                h = 0
+            t += dt
+            print(t)
+            print("\t", V, expected_V, theoretical_V)
+            print("\t", n, expected_n, theoretical_n)
+            print("\t", m, expected_m, theoretical_m)
+            print("\t", h, expected_h, theoretical_h)
+            print("\t", I)
+        master_t_list.append(t_list)
+        master_V_list.append(V_list)
+        master_n_list.append(n_list)
+        master_m_list.append(m_list)
+        master_h_list.append(h_list)
+
+    # plot a light thin line for each t_list in master_t_list
+    # plot a thick line for the average of each index across all t_lists in master_V_list
+
+    plt.subplot(2, 2, 1)
+    plt.title("n")
+    t_list = master_t_list[0]
+    for n_list in master_n_list:
+        # make the line thin and light
+        plt.plot(t_list, n_list, linewidth=0.5, alpha=0.5, label="n")
+    # plot average
+    plt.plot(t_list, np.mean(master_n_list, axis=0), linewidth=2, alpha=1, label="n")
+    plt.subplot(2, 2, 2)
+    plt.title("m")
+    for m_list in master_m_list:
+        plt.plot(t_list, m_list, linewidth=0.5, alpha=0.5, label="m")
+    # plot average
+    plt.plot(t_list, np.mean(master_m_list, axis=0), linewidth=2, alpha=1, label="m")
+    plt.subplot(2, 2, 3)
+    plt.title("h")
+    for h_list in master_h_list:
+        plt.plot(t_list, h_list, linewidth=0.5, alpha=0.5, label="h")
+    # plot average
+    plt.plot(t_list, np.mean(master_h_list, axis=0), linewidth=2, alpha=1, label="h")
+    plt.subplot(2, 2, 4)
+    plt.title("V")
+    for V_list in master_V_list:
+        plt.plot(t_list, V_list, linewidth=0.5, alpha=0.5, label="V")
+    # plot average
+    plt.plot(t_list, np.mean(master_V_list, axis=0), linewidth=2, alpha=1, label="V")
+    plt.show()
+
+
+
+
     # Plot the results, in 4 subplots
     plt.subplot(2, 2, 1)
     plt.title("n")
@@ -1132,6 +1221,8 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
 
 
 
+
+
 """
 TODO:
 1. fix the produce crossbar function - don't do the fill by all 1s or 0s
@@ -1141,7 +1232,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=1, T=2, t_p_reset=100)
+    calculate_HH_neuron_model(n_reset=1, T=0.5, t_p_reset=100e-3, num_paths=5)
 
 if __name__ == "__main__":
     main()
