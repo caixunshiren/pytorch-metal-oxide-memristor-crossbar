@@ -892,7 +892,7 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
     weights_for_h = torch.tensor([
         0.07 * dt,
         -0.07 * dt,
-        dt,
+        -dt,
         1,
         dt
     ])
@@ -983,6 +983,11 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         h = 0
         I = 10
 
+        V_result = 0
+        n_result = 0
+        m_result = 0
+        h_result = 0
+
         t = 0
         t_list = []
         V_list = []
@@ -990,17 +995,28 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         m_list = []
         h_list = []
 
+        theoretical_v_list = []
+        theoretical_n_list = []
+        theoretical_m_list = []
+        theoretical_h_list = []
+
         theoretical_V = 0
         theoretical_n = 0
         theoretical_m = 0
         theoretical_h = 0
         while t < T:
-            random_number_std_dev = 0.1
+            random_number_std_dev = 0
             t_list.append(t)
             V_list.append(V)
             n_list.append(n)
             m_list.append(m)
             h_list.append(h)
+
+            theoretical_v_list.append(theoretical_V)
+            theoretical_n_list.append(theoretical_n)
+            theoretical_m_list.append(theoretical_m)
+            theoretical_h_list.append(theoretical_h)
+
             v_input = torch.tensor([
                 I,
                 n**4 * V,
@@ -1058,10 +1074,12 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 for weight in h_input
             ], dtype=torch.float64)
 
-            V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
-            n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
-            m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
-            h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
+            # # correct code to use
+            # """correct"""
+            # V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
+            # n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
+            # m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
+            # h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
 
             # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
             # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
@@ -1142,10 +1160,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
 
-            theoretical_V = torch.dot(theoretical_v_input.double(), weights_for_v.double()).item()
-            theoretical_n = torch.dot(theoretical_n_input.double(), weights_for_n.double()).item()
-            theoretical_m = torch.dot(theoretical_m_input.double(), weights_for_m.double()).item()
-            theoretical_h = torch.dot(theoretical_h_input.double(), weights_for_h.double()).item()
+            theoretical_V = torch.clamp(torch.dot(theoretical_v_input.double(), weights_for_v.double()), -256.0, 256.0).item()
+            theoretical_n = torch.clamp(torch.dot(theoretical_n_input.double(), weights_for_n.double()), 0.0, 1.0).item()
+            theoretical_m = torch.clamp(torch.dot(theoretical_m_input.double(), weights_for_m.double()), 0.0, 1.0).item()
+            theoretical_h = torch.clamp(torch.dot(theoretical_h_input.double(), weights_for_h.double()), 0.0, 1.0).item()
 
 
             if V > 256:
@@ -1188,43 +1206,47 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         plt.plot(t_list, n_list, linewidth=0.5, alpha=0.5, label="n")
     # plot average
     plt.plot(t_list, np.mean(master_n_list, axis=0), linewidth=2, alpha=1, label="n")
+    plt.plot(t_list, theoretical_n_list, linewidth=1, alpha=1)
     plt.subplot(2, 2, 2)
     plt.title("m")
     for m_list in master_m_list:
         plt.plot(t_list, m_list, linewidth=0.5, alpha=0.5, label="m")
     # plot average
     plt.plot(t_list, np.mean(master_m_list, axis=0), linewidth=2, alpha=1, label="m")
+    plt.plot(t_list, theoretical_m_list, linewidth=1, alpha=1)
     plt.subplot(2, 2, 3)
     plt.title("h")
     for h_list in master_h_list:
         plt.plot(t_list, h_list, linewidth=0.5, alpha=0.5, label="h")
     # plot average
     plt.plot(t_list, np.mean(master_h_list, axis=0), linewidth=2, alpha=1, label="h")
+    plt.plot(t_list, theoretical_h_list, linewidth=1, alpha=1)
     plt.subplot(2, 2, 4)
     plt.title("V")
     for V_list in master_V_list:
         plt.plot(t_list, V_list, linewidth=0.5, alpha=0.5, label="V")
     # plot average
     plt.plot(t_list, np.mean(master_V_list, axis=0), linewidth=2, alpha=1, label="V")
+    plt.plot(t_list, theoretical_v_list, linewidth=1, alpha=1)
     plt.show()
 
 
 
 
-    # Plot the results, in 4 subplots
-    plt.subplot(2, 2, 1)
-    plt.title("n")
-    plt.plot(t_list, n_list, label="n")
-    plt.subplot(2, 2, 2)
-    plt.title("m")
-    plt.plot(t_list, m_list, label="m")
-    plt.subplot(2, 2, 3)
-    plt.title("h")
-    plt.plot(t_list, h_list, label="h")
-    plt.subplot(2, 2, 4)
-    plt.title("V")
-    plt.plot(t_list, V_list, label="V")
-    plt.show()
+    # # Plot the results, in 4 subplots
+    # plt.subplot(2, 2, 1)
+    # plt.title("n")
+    # plt.plot(t_list, n_list, label="n")
+    # plt.subplot(2, 2, 2)
+    # plt.title("m")
+    # plt.plot(t_list, m_list, label="m")
+    # plt.subplot(2, 2, 3)
+    # plt.title("h")
+    # plt.plot(t_list, h_list, label="h")
+    # plt.subplot(2, 2, 4)
+    # plt.title("V")
+    # plt.plot(t_list, V_list, label="V")
+    # plt.show()
 
 
 
@@ -1242,7 +1264,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(n_reset=0, T=1.5, t_p_reset=100e-3, num_paths=1)
+    calculate_HH_neuron_model(dt=0.001, n_reset=0, T=20, t_p_reset=100e-3, num_paths=1)
 
 if __name__ == "__main__":
     main()
