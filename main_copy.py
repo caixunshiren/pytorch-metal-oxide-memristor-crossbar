@@ -904,13 +904,13 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
     decoder = CurrentDecoder()
 
     v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_v, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_v, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_n, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_m, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_h, num_row_splits=2, num_col_splits=3, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
 
     # binary_weights_for_v_left, binary_weights_for_v_right = torch.split(
     #     binary_weights_for_v, binary_weights_for_v.shape[1] // 2, dim=1)
@@ -1004,8 +1004,22 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         theoretical_n = 0
         theoretical_m = 0
         theoretical_h = 0
+
+        step_count = 0
         while t < T:
-            random_number_std_dev = 0
+            # try to reprogram every 50 time steps
+            step_count += 1
+            if step_count % 50 == 0:
+                v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    binary_weights_for_v, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+
+            random_number_std_dev = 0.1
             t_list.append(t)
             V_list.append(V)
             n_list.append(n)
@@ -1074,12 +1088,12 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
                 for weight in h_input
             ], dtype=torch.float64)
 
-            # # correct code to use
-            # """correct"""
-            # V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
-            # n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
-            # m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
-            # h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
+            # correct code to use
+            """correct"""
+            V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input)
+            n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input)
+            m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input)
+            h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input)
 
             # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
             # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
@@ -1194,6 +1208,20 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=9, fraction_bits=15, n_r
         master_n_list.append(n_list)
         master_m_list.append(m_list)
         master_h_list.append(h_list)
+        # Plot the results, in 4 subplots
+        plt.subplot(2, 2, 1)
+        plt.title("n")
+        plt.plot(t_list, n_list, label="n")
+        plt.subplot(2, 2, 2)
+        plt.title("m")
+        plt.plot(t_list, m_list, label="m")
+        plt.subplot(2, 2, 3)
+        plt.title("h")
+        plt.plot(t_list, h_list, label="h")
+        plt.subplot(2, 2, 4)
+        plt.title("V")
+        plt.plot(t_list, V_list, label="V")
+        plt.show()
 
     # plot a light thin line for each t_list in master_t_list
     # plot a thick line for the average of each index across all t_lists in master_V_list
@@ -1264,7 +1292,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(dt=0.001, n_reset=0, T=20, t_p_reset=100e-3, num_paths=1)
+    calculate_HH_neuron_model(dt=0.01, n_reset=0, T=10, t_p_reset=100e-3, num_paths=15)
 
 if __name__ == "__main__":
     main()
