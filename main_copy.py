@@ -572,7 +572,7 @@ def build_binary_matrix_crossbar_split_into_subsections(
     :return: a 2-D list of crossbars with the same shape and conductance when combined, and a 2-D list of decoders
     """
     torch.set_default_dtype(torch.float64)
-    crossbar_params = {'r_wl': 10, 'r_bl': 10, 'r_in': 10, 'r_out': 10, 'V_SOURCE_MODE': '|_|'}
+    crossbar_params = {'r_wl': 20, 'r_bl': 20, 'r_in': 20, 'r_out': 20, 'V_SOURCE_MODE': '|_|'}
     memristor_model = DynamicMemristorStuck
     memristor_params = {'frequency': 1e8, 'temperature': 273 + 40}
     m, n = binary_weights.shape
@@ -667,12 +667,17 @@ def calculate_vmm_result_split_into_subsection(
                 decoded = decoder.decode_binary_crossbar_output(bit_line_possible_outputs[row_split][col_split_index], x)
                 if debug_weight_matrix is not None:
                     current_weight = debug_weight_matrix[last_row:last_row+m, len(debug_weight_matrix[last_row])-(col_count + crossbar.n):len(debug_weight_matrix[last_row])-(col_count + crossbar.n)+crossbar.n]
-                    print("weight matrix:\n", current_weight)
-                    print("input vector:", v_wl_applied)
-                    print("decoded output", decoded)
+                    # print("weight matrix:\n", current_weight)
+                    # print("input vector:", v_wl_applied)
+                    # print("decoded output", decoded)
                     for decoded_bit in range(len(decoded)):
                         if decoded[decoded_bit].item() != sum((v_wl_applied/0.4) * current_weight[:, decoded_bit].reshape(-1)).item():
                             print("=========== BIT IS WRONG ===========")
+                            print("\tExpected:", sum((v_wl_applied/0.4) * current_weight[:, decoded_bit].reshape(-1)).item())
+                            print("\tActual:", decoded[decoded_bit].item())
+                            print("\tInput vector:", v_wl_applied)
+                            print("\tWeight matrix:\n", current_weight)
+                            print("\tDecoded output:", decoded)
                 # Shift and add the decoded output to the bit result
                 # Iterate through each decoded bit (this is from left to right for each crossbar)
                 for i, decoded_bit in enumerate(decoded):
@@ -822,7 +827,7 @@ def convert_to_binary_array(number, int_bits, fraction_bits, adjust_for_multipli
     :param adjust_for_multiplication: whether to adjust the number for multiplication (add leading 1s or 0s)
     :return: binary array
     """
-    number = int(number * 2 ** fraction_bits)
+    number = round((number * 2 ** fraction_bits).item())
     if number >= 0:
         binary_string = bin(number)[2:].zfill(int_bits + fraction_bits)  # Convert integer to binary and fill leading zeros
         binary_array = [int(bit) for bit in binary_string]
@@ -987,10 +992,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
     master_h_list = []
 
     for _ in range(num_paths):
-        V = 9.227761363144964
+        V = 0
         n = 0.0
-        m = 0.10743595752865076
-        h = 0.03949748817831278
+        m = 0
+        h = 0
         I = 10
 
         V_result = 0
@@ -1111,21 +1116,21 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 v_binary_input = torch.tensor([
                     convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
                     for weight in v_input
-                ], dtype=torch.float64)
+                ])
                 n_binary_input = torch.tensor([
                     convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
                     for weight in n_input
-                ], dtype=torch.float64)
+                ])
                 m_binary_input = torch.tensor([
                     convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
                     for weight in m_input
-                ], dtype=torch.float64)
+                ])
                 h_binary_input = torch.tensor([
                     convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
                     for weight in h_input
-                ], dtype=torch.float64)
+                ])
 
-                binary_expected_V = 0  # calculate V using binary computation
+                binary_expected_V = torch.tensor([0], dtype=torch.float64)  # calculate V using binary computation
                 for bit in range(len(v_binary_input[0])):
                     bit_result = 0
                     bit_input = v_binary_input[:, bit]
@@ -1140,14 +1145,14 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                         binary_expected_V -= bit_result * 2 ** (len(v_binary_input[0]) - bit - 1)
                     else:
                         binary_expected_V += bit_result * 2 ** (len(v_binary_input[0]) - bit - 1)
-                binary_expected_V = binary_expected_V / (2 ** (2 * fraction_bits))
+                binary_expected_V = (binary_expected_V.item() / (2 ** (2 * fraction_bits)))
 
                 # correct code to use
                 """correct"""
                 # now included /2**(2*frac bits)
-                # V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input, debug_weight_matrix=binary_weights_for_v) / (2 ** (2 * fraction_bits))
+                V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input, debug_weight_matrix=binary_weights_for_v) / (2 ** (2 * fraction_bits))
                 # V_result = expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
-                V_result = binary_expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
+                # V_result = binary_expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
                 if use_software_calculated_n_m_h:
                     n_result = expected_n
                     m_result = expected_m
@@ -1210,32 +1215,6 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
             m = temp_sum_m / num_repeats
             h = temp_sum_h / num_repeats
 
-            # V_result = calculate_vmm_result_left_and_right(v_crossbar_left, v_crossbar_right, v_left_bit_line_possible_outputs, v_right_bit_line_possible_outputs, decoder, v_binary_input)
-            # n_result = calculate_vmm_result_left_and_right(n_crossbar_left, n_crossbar_right, n_left_bit_line_possible_outputs, n_right_bit_line_possible_outputs, decoder, n_binary_input)
-            # m_result = calculate_vmm_result_left_and_right(m_crossbar_left, m_crossbar_right, m_left_bit_line_possible_outputs, m_right_bit_line_possible_outputs, decoder, m_binary_input)
-            # h_result = calculate_vmm_result_left_and_right(h_crossbar_left, h_crossbar_right, h_left_bit_line_possible_outputs, h_right_bit_line_possible_outputs, decoder, h_binary_input)
-
-            # V_result = calculate_vmm_result(v_crossbar, v_bit_line_possible_outputs, decoder, v_binary_input)
-            # n_result = calculate_vmm_result(n_crossbar, n_bit_line_possible_outputs, decoder, n_binary_input)
-            # m_result = calculate_vmm_result(m_crossbar, m_bit_line_possible_outputs, decoder, m_binary_input)
-            # h_result = calculate_vmm_result(h_crossbar, h_bit_line_possible_outputs, decoder, h_binary_input)
-
-            # only take last "2n" digits
-            # V_result = int(V_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-            # n_result = int(n_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-            # m_result = int(m_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-            # h_result = int(h_result) & ((1 << (2 * (int_bits + fraction_bits))) - 1)
-
-            # divide number by 2**(2 * fraction_bits), and minus 2**int_bits twice if leading bit is 1
-            # if V_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            #     V_result = V_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-            # if n_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            #     n_result = n_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-            # if m_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            #     m_result = m_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-            # if h_result & (1 << (2 * (int_bits + fraction_bits) - 1)):
-            #     h_result = h_result - (1 << (2 * (int_bits + fraction_bits) - 1)) - (1 << (2 * (int_bits + fraction_bits) - 2))
-
             # Theoretical, start from scratch ignoring previous values
             theoretical_v_input = torch.tensor([
                 I,
@@ -1272,13 +1251,14 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
 
-            theoretical_V = torch.clamp(torch.dot(theoretical_v_input.double(), weights_for_v.double()), -256.0, 256.0).item()
+            theoretical_V = torch.clamp(torch.dot(theoretical_v_input.double(), weights_for_v.double()), -2 ** (int_bits-1), 2 ** (int_bits-1) - 1).item()
             theoretical_n = torch.clamp(torch.dot(theoretical_n_input.double(), weights_for_n.double()), 0.0, 1.0).item()
             theoretical_m = torch.clamp(torch.dot(theoretical_m_input.double(), weights_for_m.double()), 0.0, 1.0).item()
             theoretical_h = torch.clamp(torch.dot(theoretical_h_input.double(), weights_for_h.double()), 0.0, 1.0).item()
 
             t += dt
             print(t)
+            # print("\t", V * 2**fraction_bits, expected_V * 2**fraction_bits, theoretical_V, V * 2 ** fraction_bits - expected_V * 2 ** fraction_bits)
             print("\t", V, expected_V, theoretical_V)
             print("\t", n, expected_n, theoretical_n)
             print("\t", m, expected_m, theoretical_m)
@@ -1338,6 +1318,16 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
     plt.plot(t_list, np.mean(master_V_list, axis=0), linewidth=2, alpha=1, label="V")
     plt.plot(t_list, theoretical_v_list, linewidth=1, alpha=1)
     plt.show()
+    # save all numbers to a file
+    import datetime
+    current_time = datetime.datetime.now()
+    for i in range(num_paths):
+        with open(f"data_{current_time}_{i}.txt", "w") as f:
+            f.write(f"t_list: {master_t_list[i]}\n")
+            f.write(f"V_list: {master_V_list[i]}\n")
+            f.write(f"n_list: {master_n_list[i]}\n")
+            f.write(f"m_list: {master_m_list[i]}\n")
+            f.write(f"h_list: {master_h_list[i]}\n")
 
 
 
@@ -1373,7 +1363,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(dt=0.01, n_reset=0, T=2.5, t_p_reset=100, num_paths=5,
+    calculate_HH_neuron_model(dt=0.001, n_reset=0, T=15, fraction_bits=50, t_p_reset=100, num_paths=3,
                               use_software_calculated_n_m_h=True)
 
 if __name__ == "__main__":
