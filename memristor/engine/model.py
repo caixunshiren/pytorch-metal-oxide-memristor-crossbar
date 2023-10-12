@@ -1,6 +1,7 @@
 from memristor.devices import StaticMemristor, DynamicMemristor, DynamicMemristorFreeRange, DynamicMemristorStuck
 from memristor.crossbar.model import LineResistanceCrossbar
 import torch
+import numpy as np
 
 # Overall objective is:
 """
@@ -354,3 +355,114 @@ class BinaryFullyPassiveVMMEngine:
     def program_crossbar(self, crossbar, input_vector, output_vector):
         pass
 
+
+class LSHVMMEngine(VMMEngine):
+
+    
+    class LSHTable:
+        def __init__(self, hash_size, input_dimensions):
+            self.hash_size = hash_size # how many bits
+            self.input_dimensions = input_dimensions
+            self.hash_table = {}
+            self.projections = np.random.randn(self.hash_size, input_dimensions)
+        
+        def generate_hash(self, input_vector):
+            bools = (np.dot(input_vector, self.projections.T) > 0).astype('int')
+            return ''.join(bools.astype('str'))
+        
+        def __setitem__(self, input_vec, label):
+            hash_value = self.generate_hash(input_vec)
+            self.hash_table[hash_value] = self.hash_table.get(hash_value, []) + [label]
+
+        def __getitem__(self, input_vec):
+            hash_value = self.generate_hash(input_vec)
+            return self.hash_table.get(hash_value, [])
+    
+    def __init__(self):
+        pass
+
+    def build_crossbar(self, crossbar):
+        pass
+
+    def register_weights(self, crossbar, weights):
+        pass
+    
+    def inference(self, crossbar, input_vector):
+        pass 
+
+    def program_crossbar(self, crossbar, input_vector, output_vector):
+        pass
+
+    def find_nearest_neighbor(self, input_vector, hash_size):
+        lsh_table = LSHVMMEngine.LSHTable(
+            hash_size=hash_size,
+            input_dimensions=input_vector.shape[0],
+        )
+        hash = lsh_table.generate_hash(input_vector)
+
+
+class NaiveLSH:
+    # so the idea is that the crossbar contains the randomly
+    # generated weights which are used for the random projection
+    # stuff for LSH
+
+
+    class LSHTable:
+        def __init__(self, hash_size, input_dimensions, projections):
+            self.hash_size = hash_size # how many bits
+            self.input_dimensions = input_dimensions
+            self.hash_table = {}
+            #self.projections = np.random.randn(self.hash_size, input_dimensions)
+            self.projections = projections
+        
+        def generate_hash(self, input_vector):
+            bools = (np.dot(input_vector, self.projections.T) > 0).astype('int')
+            return ''.join(bools.astype('str'))
+        
+        def __setitem__(self, input_vec, label):
+            hash_value = self.generate_hash(input_vec)
+            self.hash_table[hash_value] = self.hash_table.get(hash_value, []) + [label]
+
+        def __getitem__(self, input_vec):
+            hash_value = self.generate_hash(input_vec)
+            return self.hash_table.get(hash_value, [])  
+
+
+    def __init__(self,
+                 hash_size,
+                 crossbar_class,
+                 crossbar_params,
+                 memristor_model_class,
+                 memristor_params,
+                 m,
+                 ):
+        self.hash_size = hash_size
+        # initialize the crossbar with random weights:
+        ideal_w = np.random.randn(hash_size, m)
+        self.crossbar = crossbar_class(
+            memristor_model_class, memristor_params, ideal_w, crossbar_params
+        )
+    
+    def register_weights(self, weights):
+        # for this VMM, weights are always randomly initialized 
+        # in the init and should not be changed (since they need
+        # to be random for LSH to work)
+        raise NotImplementedError
+    
+    def inference(self, input_vector):
+        # here input_vector is the queries or keys, and the goal
+        # is to separate them into buckets based on their hashes
+        # so that attention will be done at each bucket; so the 
+        # output of this function is the computed hash of the 
+        # input_vector based on the rows/columns of the weights
+        # of the crossbar (not sure if it should be rows or columns)
+        lsh_table = NaiveLSH.LSHTable(
+            hash_size=self.hash_size,
+            input_dimensions=input_vector.shape[0],
+            # ^ this needs to be the same as m in the init
+            projections=self.crossbar.ideal_w,
+        )
+        return lsh_table.generate_hash(input_vector)
+    
+    def program_crossbar(self, weights: torch.tensor):
+        raise NotImplementedError
