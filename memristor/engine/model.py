@@ -356,51 +356,6 @@ class BinaryFullyPassiveVMMEngine:
         pass
 
 
-class LSHVMMEngine(VMMEngine):
-
-    
-    class LSHTable:
-        def __init__(self, hash_size, input_dimensions):
-            self.hash_size = hash_size # how many bits
-            self.input_dimensions = input_dimensions
-            self.hash_table = {}
-            self.projections = np.random.randn(self.hash_size, input_dimensions)
-        
-        def generate_hash(self, input_vector):
-            bools = (np.dot(input_vector, self.projections.T) > 0).astype('int')
-            return ''.join(bools.astype('str'))
-        
-        def __setitem__(self, input_vec, label):
-            hash_value = self.generate_hash(input_vec)
-            self.hash_table[hash_value] = self.hash_table.get(hash_value, []) + [label]
-
-        def __getitem__(self, input_vec):
-            hash_value = self.generate_hash(input_vec)
-            return self.hash_table.get(hash_value, [])
-    
-    def __init__(self):
-        pass
-
-    def build_crossbar(self, crossbar):
-        pass
-
-    def register_weights(self, crossbar, weights):
-        pass
-    
-    def inference(self, crossbar, input_vector):
-        pass 
-
-    def program_crossbar(self, crossbar, input_vector, output_vector):
-        pass
-
-    def find_nearest_neighbor(self, input_vector, hash_size):
-        lsh_table = LSHVMMEngine.LSHTable(
-            hash_size=hash_size,
-            input_dimensions=input_vector.shape[0],
-        )
-        hash = lsh_table.generate_hash(input_vector)
-
-
 class NaiveLSH:
     # so the idea is that the crossbar contains the randomly
     # generated weights which are used for the random projection
