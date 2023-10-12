@@ -421,3 +421,34 @@ class NaiveLSH:
     
     def program_crossbar(self, weights: torch.tensor):
         raise NotImplementedError
+    
+    def hash_fn(self, queries, keys):
+        # assuming queries and keys are lists containing vectors
+        # of the right shape based on the crossbar size
+        # i guess i need to specify if the vector is a query or 
+        # key in each bucket?
+        buckets = {}
+        for query in queries:
+            hash = self.inference(query)
+            if hash not in buckets.keys():
+                buckets[hash] = {"queries": [query], "keys": []}
+            else:
+                buckets[hash]["queries"].append(query)
+        for key in keys:
+            hash = self.inference(key)
+            if hash not in buckets.keys():
+                buckets[hash] = {"queries": [], "keys": [key]}
+            else:
+                buckets[hash]["keys"].append(key)
+        
+        
+        
+        
+        # buckets = {}
+        # for vector in queries+keys:
+        #     hash = self.inference(vector)
+        #     if hash not in buckets.keys():
+        #         buckets[hash] = [vector]
+        #     else:
+        #         buckets[hash].append(vector)
+        return buckets
