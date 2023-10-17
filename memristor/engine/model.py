@@ -371,7 +371,7 @@ class NaiveLSH:
         
         def generate_hash(self, input_vector):
             input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
-            bools = (self.crossbar.naive_memristive_vmm(input_vector).numpy() > 0).astype('int')
+            bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
             return ''.join(bools.astype('str'))
         
         def __setitem__(self, input_vec, label):
