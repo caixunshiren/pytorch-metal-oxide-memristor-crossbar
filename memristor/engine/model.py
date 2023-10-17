@@ -370,7 +370,7 @@ class NaiveLSH:
             self.crossbar = crossbar
         
         def generate_hash(self, input_vector):
-            # ^ so this multiplication should happen on the crossbar, first change it so that this happens, and then add the ax+b stuff
+            input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
             bools = (self.crossbar.naive_memristive_vmm(input_vector).numpy() > 0).astype('int')
             return ''.join(bools.astype('str'))
         
@@ -390,12 +390,15 @@ class NaiveLSH:
                  memristor_model_class,
                  memristor_params,
                  m,
+                 r,
                  ):
         self.hash_size = hash_size
         # initialize the crossbar with random weights:
         ideal_w = np.random.randn(hash_size, m)
+        beta = np.random.uniform(0, r, (hash_size, 1))
+        ideal_w_with_beta = np.concatenate((ideal_w, beta), axis=1)
         self.crossbar = crossbar_class(
-            memristor_model_class, memristor_params, ideal_w, crossbar_params
+            memristor_model_class, memristor_params, ideal_w_with_beta, crossbar_params
         )
     
     def register_weights(self, weights):
