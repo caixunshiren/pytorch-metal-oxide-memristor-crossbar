@@ -363,15 +363,15 @@ class NaiveLSH:
 
 
     class LSHTable:
-        def __init__(self, hash_size, input_dimensions, projections):
+        def __init__(self, hash_size, input_dimensions, crossbar):
             self.hash_size = hash_size # how many bits
             self.input_dimensions = input_dimensions
             self.hash_table = {}
-            #self.projections = np.random.randn(self.hash_size, input_dimensions)
-            self.projections = projections
+            self.crossbar = crossbar
         
         def generate_hash(self, input_vector):
-            bools = (np.dot(input_vector, self.projections.T) > 0).astype('int')
+            # ^ so this multiplication should happen on the crossbar, first change it so that this happens, and then add the ax+b stuff
+            bools = (self.crossbar.naive_memristive_vmm(input_vector).numpy() > 0).astype('int')
             return ''.join(bools.astype('str'))
         
         def __setitem__(self, input_vec, label):
@@ -415,7 +415,7 @@ class NaiveLSH:
             hash_size=self.hash_size,
             input_dimensions=input_vector.shape[0],
             # ^ this needs to be the same as m in the init
-            projections=self.crossbar.ideal_w,
+            crossbar=self.crossbar,
         )
         return lsh_table.generate_hash(input_vector)
     
