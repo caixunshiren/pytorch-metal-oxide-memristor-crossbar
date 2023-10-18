@@ -396,7 +396,7 @@ class NaiveLSH:
         # initialize the crossbar with random weights:
         ideal_w = np.random.randn(hash_size, m)
         beta = np.random.uniform(0, r, (hash_size, 1))
-        ideal_w_with_beta = np.concatenate((ideal_w, beta), axis=1)
+        ideal_w_with_beta = torch.from_numpy(np.concatenate((ideal_w, beta), axis=1))
         self.crossbar = crossbar_class(
             memristor_model_class, memristor_params, ideal_w_with_beta, crossbar_params
         )
