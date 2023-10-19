@@ -394,7 +394,7 @@ class NaiveLSH:
                  ):
         self.hash_size = hash_size
         # initialize the crossbar with random weights:
-        ideal_w = np.random.randn(hash_size, m)
+        ideal_w = np.random.uniform(10e-6, 300e-6, (hash_size, m)) # does the precision matter like double or float or whatever
         beta = np.random.uniform(0, r, (hash_size, 1))
         ideal_w_with_beta = torch.from_numpy(np.concatenate((ideal_w, beta), axis=1))
         self.crossbar = crossbar_class(
