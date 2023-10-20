@@ -1150,23 +1150,6 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                     for weight in h_input
                 ])
 
-                binary_expected_V = torch.tensor([0], dtype=torch.float64)  # calculate V using binary computation
-                for bit in range(len(v_binary_input[0])):
-                    bit_result = 0
-                    bit_input = v_binary_input[:, bit]
-                    # print(bit_input)
-                    decoded = [sum(binary_weights_for_v[:, i] * bit_input) for i in range(len(binary_weights_for_v[0]))]
-                    for decoded_index, decoded_bit in enumerate(decoded):
-                        if decoded_index == 0:
-                            bit_result -= decoded_bit * 2 ** (len(decoded) - decoded_index - 1)
-                        else:
-                            bit_result += decoded_bit * 2 ** (len(decoded) - decoded_index - 1)
-                    if bit == 0:
-                        binary_expected_V -= bit_result * 2 ** (len(v_binary_input[0]) - bit - 1)
-                    else:
-                        binary_expected_V += bit_result * 2 ** (len(v_binary_input[0]) - bit - 1)
-                binary_expected_V = (binary_expected_V.item() / (2 ** (2 * fraction_bits)))
-
                 # correct code to use
                 """correct"""
                 # now included /2**(2*frac bits)
@@ -1204,26 +1187,26 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 if h_result < 0:
                     h_result = 0
 
-                if abs(n_result - n) > 2 * 1.3 * dt:
-                    print("pause, n changed too much")
-                    n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-                        binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                    repeat_count -= 1
-                    continue
-
-                if abs(m_result - m) > 2 * 11 * dt:
-                    print("pause, m changed too much")
-                    m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-                        binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                    repeat_count -= 1
-                    continue
-
-                if abs(h_result - h) > 2 * 1.1 * dt:
-                    print("pause, h changed too much")
-                    h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-                        binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                    repeat_count -= 1
-                    continue
+                # if abs(n_result - n) > 2 * 1.3 * dt:
+                #     print("pause, n changed too much")
+                #     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                #         binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                #     repeat_count -= 1
+                #     continue
+                #
+                # if abs(m_result - m) > 2 * 11 * dt:
+                #     print("pause, m changed too much")
+                #     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                #         binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                #     repeat_count -= 1
+                #     continue
+                #
+                # if abs(h_result - h) > 2 * 1.1 * dt:
+                #     print("pause, h changed too much")
+                #     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                #         binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                #     repeat_count -= 1
+                #     continue
 
                 temp_sum_v += V_result
                 temp_sum_n += n_result
@@ -1384,7 +1367,7 @@ TODO:
 def main():
     # test_sequential_bit_input_inference_and_power()
     calculate_HH_neuron_model(dt=0.01, n_reset=0, T=15, fraction_bits=50, t_p_reset=100, num_paths=1,
-                              use_software_calculated_n_m_h=True)
+                              use_software_calculated_n_m_h=False)
 
 if __name__ == "__main__":
     main()
