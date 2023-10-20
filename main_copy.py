@@ -1018,7 +1018,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
     master_m_list = []
     master_h_list = []
 
-    for _ in range(num_paths):
+    import datetime
+    start_time = datetime.datetime.now()
+
+    for i in range(num_paths):
         V = 0
         n = 0.0
         m = 0
@@ -1052,214 +1055,218 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
         t_to_pause_end = 0.85
 
         step_count = 0
-        while t < T:
-            if t_to_pause_end > t > t_to_pause_start:
-                print("paused")
+        with open(f"data_{start_time}_{i}.txt", "w") as f:
+            f.write(f"t,V,n,m,h,I\n")
+            f.write(f"{t},{V},{n},{m},{h},{I}\n")  # First write initial state
+            while t < T:
+                if t_to_pause_end > t > t_to_pause_start:
+                    print("paused")
 
 
-            # try to reprogram every 50 time steps
-            step_count += 1
-            # if step_count % 50 == 0:
-            #     v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-            #         binary_weights_for_v, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-            #     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-            #         binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-            #     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-            #         binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-            #     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-            #         binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-
-            random_number_std_dev = 0.1
-            t_list.append(t)
-            V_list.append(V)
-            n_list.append(n)
-            m_list.append(m)
-            h_list.append(h)
-
-            theoretical_v_list.append(theoretical_V)
-            theoretical_n_list.append(theoretical_n)
-            theoretical_m_list.append(theoretical_m)
-            theoretical_h_list.append(theoretical_h)
-
-            # How many times to repeat the simulation for each time step and find avg
-            num_repeats = 1
-
-            temp_sum_v = 0
-            temp_sum_n = 0
-            temp_sum_m = 0
-            temp_sum_h = 0
-
-            repeat_count = 0
-            while repeat_count < num_repeats:
-                repeat_count += 1
-                v_input = torch.tensor([
-                    I,
-                    n**4 * V,
-                    n**4,
-                    m**3 * h * V,
-                    m**3 * h,
-                    V,
-                    1
-                ])
-                n_input = torch.tensor([
-                    n,
-                    (10-V) * (1-n) / (exp((10 - V) / 10) - 1),
-                    exp(-V / 80) * n,
-                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-                ])
-                m_input = torch.tensor([
-                    m,
-                    (25-V) * (1-m) / (exp((25 - V) / 10) - 1),
-                    exp(-V / 18) * m,
-                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-                ])
-                h_input = torch.tensor([
-                    h,
-                    (1-h) * exp(-V / 20),
-                    h / (exp((30 - V) / 10) + 1),
-                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-                ])
-
-                # expected_V is dot product of v_input and v_weights
-                # RuntimeError: dot : expected both vectors to have same dtype, but found Long and Double
-                expected_V = torch.dot(v_input.double(), weights_for_v.double()).item()
-                expected_n = torch.dot(n_input.double(), weights_for_n.double()).item()
-                expected_m = torch.dot(m_input.double(), weights_for_m.double()).item()
-                expected_h = torch.dot(h_input.double(), weights_for_h.double()).item()
-
-                # clamp all input to -2**int_bits, 2**int_bits - 1
-                v_input = torch.clamp(v_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
-                n_input = torch.clamp(n_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
-                m_input = torch.clamp(m_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
-                h_input = torch.clamp(h_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
-
-                v_binary_input = torch.tensor([
-                    convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-                    for weight in v_input
-                ])
-                n_binary_input = torch.tensor([
-                    convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-                    for weight in n_input
-                ])
-                m_binary_input = torch.tensor([
-                    convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-                    for weight in m_input
-                ])
-                h_binary_input = torch.tensor([
-                    convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
-                    for weight in h_input
-                ])
-
-                # correct code to use
-                """correct"""
-                # now included /2**(2*frac bits)
-                V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input) / (2 ** (2 * fraction_bits))  # , debug_weight_matrix=binary_weights_for_v
-                # V_result = expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
-                # V_result = binary_expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
-                if use_software_calculated_n_m_h:
-                    n_result = expected_n
-                    m_result = expected_m
-                    h_result = expected_h
-                else:
-                    n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input) / (2 ** (2 * fraction_bits))
-                    m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input) / (2 ** (2 * fraction_bits))
-                    h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input) / (2 ** (2 * fraction_bits))
-
-                # V_result = V_result / (2 ** (2 * fraction_bits))
-                # n_result = n_result / (2 ** (2 * fraction_bits))
-                # m_result = m_result / (2 ** (2 * fraction_bits))
-                # h_result = h_result / (2 ** (2 * fraction_bits))
-
-                if V_result > 2 ** (int_bits - 1) - 1:
-                    V_result = 2 ** (int_bits - 1) - 1
-                if V_result < -2 ** (int_bits - 1):
-                    V_result = -2 ** (int_bits - 1)
-                if n_result > 1:
-                    n_result = 1
-                if m_result > 1:
-                    m_result = 1
-                if h_result > 1:
-                    h_result = 1
-                if n_result < 0:
-                    n_result = 0
-                if m_result < 0:
-                    m_result = 0
-                if h_result < 0:
-                    h_result = 0
-
-                # if abs(n_result - n) > 2 * 1.3 * dt:
-                #     print("pause, n changed too much")
+                # try to reprogram every 50 time steps
+                step_count += 1
+                # if step_count % 50 == 0:
+                #     v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                #         binary_weights_for_v, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
                 #     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
                 #         binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                #     repeat_count -= 1
-                #     continue
-                #
-                # if abs(m_result - m) > 2 * 11 * dt:
-                #     print("pause, m changed too much")
                 #     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
                 #         binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                #     repeat_count -= 1
-                #     continue
-                #
-                # if abs(h_result - h) > 2 * 1.1 * dt:
-                #     print("pause, h changed too much")
                 #     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
                 #         binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
-                #     repeat_count -= 1
-                #     continue
 
-                temp_sum_v += V_result
-                temp_sum_n += n_result
-                temp_sum_m += m_result
-                temp_sum_h += h_result
+                random_number_std_dev = 0.1
+                t_list.append(t)
+                V_list.append(V)
+                n_list.append(n)
+                m_list.append(m)
+                h_list.append(h)
 
-            V = temp_sum_v / num_repeats
-            n = temp_sum_n / num_repeats
-            m = temp_sum_m / num_repeats
-            h = temp_sum_h / num_repeats
+                theoretical_v_list.append(theoretical_V)
+                theoretical_n_list.append(theoretical_n)
+                theoretical_m_list.append(theoretical_m)
+                theoretical_h_list.append(theoretical_h)
 
-            # Theoretical, start from scratch ignoring previous values
-            theoretical_v_input = torch.tensor([
-                I,
-                theoretical_n ** 4 * theoretical_V,
-                theoretical_n ** 4,
-                theoretical_m ** 3 * theoretical_h * theoretical_V,
-                theoretical_m ** 3 * theoretical_h,
-                theoretical_V,
-                1
-            ])
-            theoretical_n_input = torch.tensor([
-                theoretical_n,
-                (10 - theoretical_V) * (1 - theoretical_n) / (exp((10 - theoretical_V) / 10) - 1),
-                exp(-theoretical_V / 80) * theoretical_n,
-                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-            ])
-            theoretical_m_input = torch.tensor([
-                theoretical_m,
-                (25 - theoretical_V) * (1 - theoretical_m) / (exp((25 - theoretical_V) / 10) - 1),
-                exp(-theoretical_V / 18) * theoretical_m,
-                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-            ])
-            theoretical_h_input = torch.tensor([
-                theoretical_h,
-                (1 - theoretical_h) * exp(-theoretical_V / 20),
-                theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
-                torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
-            ])
+                # How many times to repeat the simulation for each time step and find avg
+                num_repeats = 1
 
-            theoretical_V = torch.clamp(torch.dot(theoretical_v_input.double(), weights_for_v.double()), -2 ** (int_bits-1), 2 ** (int_bits-1) - 1).item()
-            theoretical_n = torch.clamp(torch.dot(theoretical_n_input.double(), weights_for_n.double()), 0.0, 1.0).item()
-            theoretical_m = torch.clamp(torch.dot(theoretical_m_input.double(), weights_for_m.double()), 0.0, 1.0).item()
-            theoretical_h = torch.clamp(torch.dot(theoretical_h_input.double(), weights_for_h.double()), 0.0, 1.0).item()
+                temp_sum_v = 0
+                temp_sum_n = 0
+                temp_sum_m = 0
+                temp_sum_h = 0
 
-            t += dt
-            print(t)
-            # print("\t", V * 2**fraction_bits, expected_V * 2**fraction_bits, theoretical_V, V * 2 ** fraction_bits - expected_V * 2 ** fraction_bits)
-            print("\t", V, expected_V, theoretical_V)
-            print("\t", n, expected_n, theoretical_n)
-            print("\t", m, expected_m, theoretical_m)
-            print("\t", h, expected_h, theoretical_h)
-            print("\t", I)
+                repeat_count = 0
+                while repeat_count < num_repeats:
+                    repeat_count += 1
+                    v_input = torch.tensor([
+                        I,
+                        n**4 * V,
+                        n**4,
+                        m**3 * h * V,
+                        m**3 * h,
+                        V,
+                        1
+                    ])
+                    n_input = torch.tensor([
+                        n,
+                        (10-V) * (1-n) / (exp((10 - V) / 10) - 1),
+                        exp(-V / 80) * n,
+                        torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                    ])
+                    m_input = torch.tensor([
+                        m,
+                        (25-V) * (1-m) / (exp((25 - V) / 10) - 1),
+                        exp(-V / 18) * m,
+                        torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                    ])
+                    h_input = torch.tensor([
+                        h,
+                        (1-h) * exp(-V / 20),
+                        h / (exp((30 - V) / 10) + 1),
+                        torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                    ])
+
+                    # expected_V is dot product of v_input and v_weights
+                    # RuntimeError: dot : expected both vectors to have same dtype, but found Long and Double
+                    expected_V = torch.dot(v_input.double(), weights_for_v.double()).item()
+                    expected_n = torch.dot(n_input.double(), weights_for_n.double()).item()
+                    expected_m = torch.dot(m_input.double(), weights_for_m.double()).item()
+                    expected_h = torch.dot(h_input.double(), weights_for_h.double()).item()
+
+                    # clamp all input to -2**int_bits, 2**int_bits - 1
+                    v_input = torch.clamp(v_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
+                    n_input = torch.clamp(n_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
+                    m_input = torch.clamp(m_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
+                    h_input = torch.clamp(h_input, -2**(int_bits-1), 2**(int_bits-1) - 1)
+
+                    v_binary_input = torch.tensor([
+                        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                        for weight in v_input
+                    ])
+                    n_binary_input = torch.tensor([
+                        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                        for weight in n_input
+                    ])
+                    m_binary_input = torch.tensor([
+                        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                        for weight in m_input
+                    ])
+                    h_binary_input = torch.tensor([
+                        convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
+                        for weight in h_input
+                    ])
+
+                    # correct code to use
+                    """correct"""
+                    # now included /2**(2*frac bits)
+                    V_result = calculate_vmm_result_split_into_subsection(v_crossbars, v_crossbars_possible_outputs, decoder, v_binary_input) / (2 ** (2 * fraction_bits))  # , debug_weight_matrix=binary_weights_for_v
+                    # V_result = expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
+                    # V_result = binary_expected_V  # ONLY FOR FULL SOFTWARE COMPUTATION
+                    if use_software_calculated_n_m_h:
+                        n_result = expected_n
+                        m_result = expected_m
+                        h_result = expected_h
+                    else:
+                        n_result = calculate_vmm_result_split_into_subsection(n_crossbars, n_crossbars_possible_outputs, decoder, n_binary_input) / (2 ** (2 * fraction_bits))
+                        m_result = calculate_vmm_result_split_into_subsection(m_crossbars, m_crossbars_possible_outputs, decoder, m_binary_input) / (2 ** (2 * fraction_bits))
+                        h_result = calculate_vmm_result_split_into_subsection(h_crossbars, h_crossbars_possible_outputs, decoder, h_binary_input) / (2 ** (2 * fraction_bits))
+
+                    # V_result = V_result / (2 ** (2 * fraction_bits))
+                    # n_result = n_result / (2 ** (2 * fraction_bits))
+                    # m_result = m_result / (2 ** (2 * fraction_bits))
+                    # h_result = h_result / (2 ** (2 * fraction_bits))
+
+                    if V_result > 2 ** (int_bits - 1) - 1:
+                        V_result = 2 ** (int_bits - 1) - 1
+                    if V_result < -2 ** (int_bits - 1):
+                        V_result = -2 ** (int_bits - 1)
+                    if n_result > 1:
+                        n_result = 1
+                    if m_result > 1:
+                        m_result = 1
+                    if h_result > 1:
+                        h_result = 1
+                    if n_result < 0:
+                        n_result = 0
+                    if m_result < 0:
+                        m_result = 0
+                    if h_result < 0:
+                        h_result = 0
+
+                    # if abs(n_result - n) > 2 * 1.3 * dt:
+                    #     print("pause, n changed too much")
+                    #     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    #         binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                    #     repeat_count -= 1
+                    #     continue
+                    #
+                    # if abs(m_result - m) > 2 * 11 * dt:
+                    #     print("pause, m changed too much")
+                    #     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    #         binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                    #     repeat_count -= 1
+                    #     continue
+                    #
+                    # if abs(h_result - h) > 2 * 1.1 * dt:
+                    #     print("pause, h changed too much")
+                    #     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
+                    #         binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+                    #     repeat_count -= 1
+                    #     continue
+
+                    temp_sum_v += V_result
+                    temp_sum_n += n_result
+                    temp_sum_m += m_result
+                    temp_sum_h += h_result
+
+                V = temp_sum_v / num_repeats
+                n = temp_sum_n / num_repeats
+                m = temp_sum_m / num_repeats
+                h = temp_sum_h / num_repeats
+
+                # Theoretical, start from scratch ignoring previous values
+                theoretical_v_input = torch.tensor([
+                    I,
+                    theoretical_n ** 4 * theoretical_V,
+                    theoretical_n ** 4,
+                    theoretical_m ** 3 * theoretical_h * theoretical_V,
+                    theoretical_m ** 3 * theoretical_h,
+                    theoretical_V,
+                    1
+                ])
+                theoretical_n_input = torch.tensor([
+                    theoretical_n,
+                    (10 - theoretical_V) * (1 - theoretical_n) / (exp((10 - theoretical_V) / 10) - 1),
+                    exp(-theoretical_V / 80) * theoretical_n,
+                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                ])
+                theoretical_m_input = torch.tensor([
+                    theoretical_m,
+                    (25 - theoretical_V) * (1 - theoretical_m) / (exp((25 - theoretical_V) / 10) - 1),
+                    exp(-theoretical_V / 18) * theoretical_m,
+                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                ])
+                theoretical_h_input = torch.tensor([
+                    theoretical_h,
+                    (1 - theoretical_h) * exp(-theoretical_V / 20),
+                    theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
+                    torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
+                ])
+
+                theoretical_V = torch.clamp(torch.dot(theoretical_v_input.double(), weights_for_v.double()), -2 ** (int_bits-1), 2 ** (int_bits-1) - 1).item()
+                theoretical_n = torch.clamp(torch.dot(theoretical_n_input.double(), weights_for_n.double()), 0.0, 1.0).item()
+                theoretical_m = torch.clamp(torch.dot(theoretical_m_input.double(), weights_for_m.double()), 0.0, 1.0).item()
+                theoretical_h = torch.clamp(torch.dot(theoretical_h_input.double(), weights_for_h.double()), 0.0, 1.0).item()
+
+                t += dt
+                print(t)
+                # print("\t", V * 2**fraction_bits, expected_V * 2**fraction_bits, theoretical_V, V * 2 ** fraction_bits - expected_V * 2 ** fraction_bits)
+                print("\t", V, expected_V, theoretical_V)
+                print("\t", n, expected_n, theoretical_n)
+                print("\t", m, expected_m, theoretical_m)
+                print("\t", h, expected_h, theoretical_h)
+                print("\t", I)
+                f.write(f"{t},{V},{n},{m},{h},{I}\n")
         master_t_list.append(t_list)
         master_V_list.append(V_list)
         master_n_list.append(n_list)
@@ -1314,16 +1321,6 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
     plt.plot(t_list, np.mean(master_V_list, axis=0), linewidth=2, alpha=1, label="V")
     plt.plot(t_list, theoretical_v_list, linewidth=1, alpha=1)
     plt.show()
-    # save all numbers to a file
-    import datetime
-    current_time = datetime.datetime.now()
-    for i in range(num_paths):
-        with open(f"data_{current_time}_{i}.txt", "w") as f:
-            f.write(f"t_list: {master_t_list[i]}\n")
-            f.write(f"V_list: {master_V_list[i]}\n")
-            f.write(f"n_list: {master_n_list[i]}\n")
-            f.write(f"m_list: {master_m_list[i]}\n")
-            f.write(f"h_list: {master_h_list[i]}\n")
 
 
 
@@ -1359,7 +1356,7 @@ TODO:
 
 def main():
     # test_sequential_bit_input_inference_and_power()
-    calculate_HH_neuron_model(dt=0.01, n_reset=0, T=15, fraction_bits=50, t_p_reset=100, num_paths=1,
+    calculate_HH_neuron_model(dt=0.001, n_reset=0, T=30, fraction_bits=50, t_p_reset=100, num_paths=1,
                               use_software_calculated_n_m_h=False)
 
 if __name__ == "__main__":
