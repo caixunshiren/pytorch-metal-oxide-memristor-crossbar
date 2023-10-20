@@ -1229,28 +1229,21 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 1
             ])
             theoretical_n_input = torch.tensor([
-                1 / (exp((10 - theoretical_V) / 10) - 1),
-                theoretical_V / (exp((10 - theoretical_V) / 10) - 1),
-                theoretical_n / (exp((10 - theoretical_V) / 10) - 1),
-                theoretical_n * theoretical_V / (exp((10 - theoretical_V) / 10) - 1),
-                exp(-theoretical_V / 80) * theoretical_n,
                 theoretical_n,
+                (10 - theoretical_V) * (1 - theoretical_n) / (exp((10 - theoretical_V) / 10) - 1),
+                exp(-theoretical_V / 80) * theoretical_n,
                 torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             theoretical_m_input = torch.tensor([
-                1 / (exp((25 - theoretical_V) / 10) - 1),
-                theoretical_V / (exp((25 - theoretical_V) / 10) - 1),
-                theoretical_m / (exp((25 - theoretical_V) / 10) - 1),
-                theoretical_m * theoretical_V / (exp((25 - theoretical_V) / 10) - 1),
-                exp(-theoretical_V / 18) * theoretical_m,
                 theoretical_m,
+                (25 - theoretical_V) * (1 - theoretical_m) / (exp((25 - theoretical_V) / 10) - 1),
+                exp(-theoretical_V / 18) * theoretical_m,
                 torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
             theoretical_h_input = torch.tensor([
-                exp(-theoretical_V / 20),
-                theoretical_h * exp(-theoretical_V / 20),
-                theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
                 theoretical_h,
+                (1 - theoretical_h) * exp(-theoretical_V / 20),
+                theoretical_h / (exp((30 - theoretical_V) / 10) + 1),
                 torch.normal(0.0, random_number_std_dev, (1,)).item()  # noise
             ])
 
