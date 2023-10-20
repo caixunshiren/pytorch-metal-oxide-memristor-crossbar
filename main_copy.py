@@ -876,13 +876,13 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                     1])
     """
     weights_for_v = torch.tensor([
-        dt*(1 + dt) / (2*HH_params['C_m']),
-        -HH_params['g_K'] * dt*(1 + dt) / (2*HH_params['C_m']),
-        HH_params['g_K'] * HH_params['V_K'] * dt*(1 + dt) / (2*HH_params['C_m']),
-        -HH_params['g_Na'] * dt*(1 + dt) / (2*HH_params['C_m']),
-        HH_params['g_Na'] * HH_params['V_Na'] * dt*(1 + dt) / (2*HH_params['C_m']),
-        1 + dt/2 - HH_params['g_L'] * dt*(1 + dt) / (2*HH_params['C_m']),
-        HH_params['g_L'] * HH_params['V_L'] * dt*(1 + dt) / (2*HH_params['C_m']),
+        dt / (HH_params['C_m']),
+        -HH_params['g_K'] * dt / (HH_params['C_m']),
+        HH_params['g_K'] * HH_params['V_K'] * dt / (HH_params['C_m']),
+        -HH_params['g_Na'] * dt / (HH_params['C_m']),
+        HH_params['g_Na'] * HH_params['V_Na'] * dt / (HH_params['C_m']),
+        1 - HH_params['g_L'] * dt / (HH_params['C_m']),
+        HH_params['g_L'] * HH_params['V_L'] * dt / (HH_params['C_m']),
         ])
     binary_weights_for_v = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -897,10 +897,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 ])
     """
     weights_for_n = torch.tensor([
-        1 + dt/2,
-        0.01 * dt * (1+dt) / 2,
-        -0.125 * dt * (1+dt) / 2,
-        dt * (1+dt) / 2
+        1,
+        0.01 * dt,
+        -0.125 * dt,
+        dt
     ])
     binary_weights_for_n = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -915,10 +915,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 ])
     """
     weights_for_m = torch.tensor([
-        1 + dt/2,
-        0.1 * dt * (1+dt) / 2,
-        -4 * dt * (1+dt) / 2,
-        dt * (1+dt) / 2
+        1,
+        0.1 * dt,
+        -4 * dt,
+        dt
     ])
     binary_weights_for_m = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -933,10 +933,10 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
                 ])
     """
     weights_for_h = torch.tensor([
-        1 + dt/2,
-        0.07 * dt * (1+dt) / 2,
-        -dt * (1+dt) / 2,
-        dt * (1+dt) / 2
+        1,
+        0.07 * dt,
+        -dt,
+        dt
     ])
     binary_weights_for_h = torch.tensor([
         convert_to_binary_array(weight, int_bits, fraction_bits, adjust_for_multiplication=False)
@@ -948,11 +948,11 @@ def calculate_HH_neuron_model(dt=0.01, T=50.0, int_bits=8, fraction_bits=16, n_r
     v_crossbars, v_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
         binary_weights_for_v, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     n_crossbars, n_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_n, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_n, num_row_splits=1, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     m_crossbars, m_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_m, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_m, num_row_splits=1, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
     h_crossbars, h_crossbars_possible_outputs = build_binary_matrix_crossbar_split_into_subsections(
-        binary_weights_for_h, num_row_splits=2, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
+        binary_weights_for_h, num_row_splits=1, num_col_splits=8, n_reset=n_reset, t_p_reset=t_p_reset)
 
     # binary_weights_for_v_left, binary_weights_for_v_right = torch.split(
     #     binary_weights_for_v, binary_weights_for_v.shape[1] // 2, dim=1)
