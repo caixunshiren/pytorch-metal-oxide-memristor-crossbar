@@ -51,8 +51,8 @@ class StaticMemristor:
                         PARAMS['A1']['p3'] * self.g_0 ** 2
         self.sigma_A3 = PARAMS['A3']['p0'] + PARAMS['A3']['p1'] * self.g_0 + PARAMS['A3']['p2'] * self.t + \
                         PARAMS['A3']['p3'] * self.g_0 ** 2 + PARAMS['A3']['p4'] * self.g_0 * self.t
-        self.g_linfit, _, _, _ = np.linalg.lstsq(np.reshape(np.linspace(0, 0.2, 50), [50,1]), # -0.2
-                                                 [self.inference(v) for v in np.linspace(0, 0.2, 50)], rcond=-1) # -0.2
+        self.g_linfit, _, _, _ = np.linalg.lstsq(np.reshape(np.linspace(-0.2, 0.2, 50), [50,1]), # -0.2
+                                                 [self.inference(v) for v in np.linspace(-0.2, 0.2, 50)], rcond=-1) # -0.2
 
     def inference(self, v):
         """
@@ -62,6 +62,8 @@ class StaticMemristor:
         :return: output current i
         """
         i_spacial = self.noise_free_dc_iv_curve(v) + self.d2d_variation(v)
+        # if i_spacial < 0:
+        #     i_spacial = 0
         i = i_spacial + self.temporal_variation(v, i_spacial)
         return i
 

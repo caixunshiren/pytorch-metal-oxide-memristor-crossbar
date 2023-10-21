@@ -363,15 +363,34 @@ class NaiveLSH:
 
 
     class LSHTable:
-        def __init__(self, hash_size, input_dimensions, crossbar):
+        def __init__(self, hash_size, input_dimensions, crossbar, a, b, c, d):
             self.hash_size = hash_size # how many bits
             self.input_dimensions = input_dimensions
             self.hash_table = {}
             self.crossbar = crossbar
+            self.a = a
+            self.b = b
+            self.c = c
+            self.d = d
         
         def generate_hash(self, input_vector):
             input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
-            bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
+            # bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
+            # bools2 = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
+            # print (type(bools2))
+            # print (bools2)
+            # print (bools2.astype('str'))
+            bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
+            # print (type(bools))
+            # print (bools)
+            # print (bools.astype('str'))
+            # print (bools.squeeze().astype('str'))
+            result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy()
+            # print (type(result))
+            # print (type(input_vector))
+            # print (type(self.crossbar.ideal_w))
+            converted = (result - self.b*self.c*((input_vector-self.d)/self.c) + self.a*self.d*((self.crossbar.ideal_w.numpy()-self.b)/self.a) + self.b*self.d) / self.a*self.c
+            bools = (converted > 0).astype('int')
             return ''.join(bools.astype('str'))
         
         def __setitem__(self, input_vec, label):
@@ -394,11 +413,30 @@ class NaiveLSH:
                  ):
         self.hash_size = hash_size
         # initialize the crossbar with random weights:
-        ideal_w = np.random.uniform(10e-6, 300e-6, (hash_size, m)) # does the precision matter like double or float or whatever
-        beta = np.random.uniform(0, r, (hash_size, 1))
+        # ideal_w = np.random.uniform(10e-6, 300e-6, (hash_size, m)) # does the precision matter like double or float or whatever
+        ideal_w = np.random.randn(hash_size, m)
+        # random values needed by the lsh algorithm are np.random.randn values, we need to map them to 10e-6 to 300e-6 conductance values, to deal with negative values use differential mapping
+        #beta = np.random.uniform(0, r, (hash_size, 1))
+        # for simplicity, rn gonna get beta from standard normal distribution too:
+        beta = np.random.randn(hash_size, 1)
         ideal_w_with_beta = torch.from_numpy(np.concatenate((ideal_w, beta), axis=1))
+        # ^ so this is a tensor with real number weights, including negative values      (with beta also drawn from std normal, all the values are drawn from std normal rn)
+        # we need to map this to the conductance range of 10e-6 to 300e-6:
+        #print (ideal_w_with_beta.shape)
+        #raise ValueError
+        min_w = ideal_w_with_beta.min().item()
+        max_w = ideal_w_with_beta.max().item()
+        min_g = 10e-6
+        max_g = 300e-6
+        a = (max_g - min_g) / (max_w - min_w)
+        b = min_g - a * min_w
+        ideal_g_with_beta = a * ideal_w_with_beta + b
+        self.a = a
+        self.b = b
+        self.c = None
+        self.d = None
         self.crossbar = crossbar_class(
-            memristor_model_class, memristor_params, ideal_w_with_beta, crossbar_params
+            memristor_model_class, memristor_params, ideal_g_with_beta, crossbar_params # w
         )
     
     def register_weights(self, weights):
@@ -414,13 +452,26 @@ class NaiveLSH:
         # output of this function is the computed hash of the 
         # input_vector based on the rows/columns of the weights
         # of the crossbar (not sure if it should be rows or columns)
+        min = np.min(input_vector)
+        max = np.max(input_vector)
+        v_min = -0.4
+        v_max = 0.4
+        c = (v_max - v_min) / (max - min)
+        d = v_min - c * min
+        input_v = c * input_vector + d
+        self.c = c
+        self.d = d
         lsh_table = NaiveLSH.LSHTable(
             hash_size=self.hash_size,
-            input_dimensions=input_vector.shape[0],
+            input_dimensions=input_v.shape[0], # vector
             # ^ this needs to be the same as m in the init
             crossbar=self.crossbar,
+            a=self.a,
+            b=self.b,
+            c=self.c,
+            d=self.d,
         )
-        return lsh_table.generate_hash(input_vector)
+        return lsh_table.generate_hash(input_v) # vector
     
     def program_crossbar(self, weights: torch.tensor):
         raise NotImplementedError
