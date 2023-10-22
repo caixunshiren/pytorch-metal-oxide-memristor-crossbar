@@ -385,12 +385,30 @@ class NaiveLSH:
             # print (bools)
             # print (bools.astype('str'))
             # print (bools.squeeze().astype('str'))
-            result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy()
+            result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)
             # print (type(result))
             # print (type(input_vector))
             # print (type(self.crossbar.ideal_w))
-            converted = (result - self.b*self.c*((input_vector-self.d)/self.c) + self.a*self.d*((self.crossbar.ideal_w.numpy()-self.b)/self.a) + self.b*self.d) / self.a*self.c
-            bools = (converted > 0).astype('int')
+            # converted = (result - self.b*self.c*((input_vector-self.d)/self.c) + self.a*self.d*((self.crossbar.ideal_w.numpy()-self.b)/self.a) + self.b*self.d) / self.a*self.c
+            # for i in [self.a, self.b, self.c, self.d]:
+            #     print (i) # scalars
+            # print (input_vector_with_beta.shape) # (6,1)
+            # print (self.crossbar.ideal_w.numpy().shape) # (3,6)
+            # print (result.shape) # (3,)   should be 3x1?
+            # converted = (result - self.b*self.c*((input_vector_with_beta-self.d)/self.c) + self.a*self.d*((self.crossbar.ideal_w.numpy()-self.b)/self.a) + self.b*self.d) / self.a*self.c
+            b_broadcast = np.full((3, 6), self.b)
+            d_broadcast = np.full((6, 1), self.d)
+            converted = (result - self.c*(b_broadcast@((input_vector_with_beta-self.d)/self.c)) - self.a*(((self.crossbar.ideal_w.numpy()-self.b)/self.a)@d_broadcast) - b_broadcast@d_broadcast) / self.a*self.c
+            #                                                                  ^ should automatically broadcast,                           ^ this too
+            # print (converted.shape)
+            # print (result.shape) # (3,)
+            # print ((self.c*(b_broadcast@((input_vector_with_beta-self.d)/self.c))).shape) # (3,1)
+            # print (result)
+            # print (result.reshape(-1, 1))
+            # print (result.reshape(-1, 1).shape)
+            # bools = (converted > 0).astype('int')
+            bools = (converted > 0).astype('int').squeeze()
+            # print (bools)
             return ''.join(bools.astype('str'))
         
         def __setitem__(self, input_vec, label):
