@@ -25,6 +25,7 @@ class LineResistanceCrossbar:
         self.memristor_model = memristor_model
         self.memristor_params = memristor_params
         self.ideal_w = torch.clone(ideal_w)
+        '''
         self.memristors = [[initialize_memristor(memristor_model, memristor_params, self.ideal_w[i, j])
                             for j in range(self.ideal_w.shape[1])] for i in range(self.ideal_w.shape[0])]
         self.n, self.m = self.ideal_w.shape
@@ -74,6 +75,7 @@ class LineResistanceCrossbar:
 
         # Power log
         self.power_log = []
+        '''
 
     def register_weights(self, w):
         """

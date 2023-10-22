@@ -375,12 +375,21 @@ class NaiveLSH:
         
         def generate_hash(self, input_vector):
             input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
+
+
+
+            bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
+            return ''.join(bools.astype('str'))
+
+            '''
+
+
             # bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
             # bools2 = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
             # print (type(bools2))
             # print (bools2)
             # print (bools2.astype('str'))
-            bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
+            #bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
             # print (type(bools))
             # print (bools)
             # print (bools.astype('str'))
@@ -396,8 +405,10 @@ class NaiveLSH:
             # print (self.crossbar.ideal_w.numpy().shape) # (3,6)
             # print (result.shape) # (3,)   should be 3x1?
             # converted = (result - self.b*self.c*((input_vector_with_beta-self.d)/self.c) + self.a*self.d*((self.crossbar.ideal_w.numpy()-self.b)/self.a) + self.b*self.d) / self.a*self.c
-            b_broadcast = np.full((3, 6), self.b)
-            d_broadcast = np.full((6, 1), self.d)
+            # b_broadcast = np.full((3, 6), self.b)
+            # d_broadcast = np.full((6, 1), self.d)
+            b_broadcast = np.full(self.crossbar.ideal_w.numpy().shape, self.b)
+            d_broadcast = np.full(input_vector_with_beta.shape, self.d)
             converted = (result - self.c*(b_broadcast@((input_vector_with_beta-self.d)/self.c)) - self.a*(((self.crossbar.ideal_w.numpy()-self.b)/self.a)@d_broadcast) - b_broadcast@d_broadcast) / self.a*self.c
             #                                                                  ^ should automatically broadcast,                           ^ this too
             # print (converted.shape)
@@ -410,6 +421,7 @@ class NaiveLSH:
             bools = (converted > 0).astype('int').squeeze()
             # print (bools)
             return ''.join(bools.astype('str'))
+            '''
         
         def __setitem__(self, input_vec, label):
             hash_value = self.generate_hash(input_vec)
@@ -454,7 +466,7 @@ class NaiveLSH:
         self.c = None
         self.d = None
         self.crossbar = crossbar_class(
-            memristor_model_class, memristor_params, ideal_g_with_beta, crossbar_params # w
+            memristor_model_class, memristor_params, ideal_w_with_beta, crossbar_params ####################################################### g
         )
     
     def register_weights(self, weights):
