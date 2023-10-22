@@ -374,9 +374,9 @@ class NaiveLSH:
             self.d = d
         
         def generate_hash(self, input_vector):
-            input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
-
-
+            #input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
+            input_vector_with_beta = input_vector
+            '''
 
             ###bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
             
@@ -392,10 +392,10 @@ class NaiveLSH:
             
             return ''.join(bools.astype('str'))
 
-            
-            
-            
             '''
+            
+            
+            #'''
 
 
             # bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
@@ -409,6 +409,8 @@ class NaiveLSH:
             # print (bools.astype('str'))
             # print (bools.squeeze().astype('str'))
             result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)
+            # print (input_vector_with_beta)
+            # print (result)
             # print (type(result))
             # print (type(input_vector))
             # print (type(self.crossbar.ideal_w))
@@ -435,7 +437,7 @@ class NaiveLSH:
             bools = (converted > 0).astype('int').squeeze()
             # print (bools)
             return ''.join(bools.astype('str'))
-            '''
+            #'''
         
         def __setitem__(self, input_vec, label):
             hash_value = self.generate_hash(input_vec)
@@ -496,6 +498,8 @@ class NaiveLSH:
         # output of this function is the computed hash of the 
         # input_vector based on the rows/columns of the weights
         # of the crossbar (not sure if it should be rows or columns)
+        # add the 1 here:
+        input_vector = np.vstack((input_vector, np.array([[1]])))
         min = np.min(input_vector)
         max = np.max(input_vector)
         v_min = -0.4
