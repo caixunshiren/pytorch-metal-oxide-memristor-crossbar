@@ -378,9 +378,23 @@ class NaiveLSH:
 
 
 
-            bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
+            ###bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
+            
+            
+            result = self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy()
+            #print (result.shape) # (5, 1) so don't need to reshape      5 is hash size
+            b_broadcast = np.full(self.crossbar.ideal_w.numpy().shape, self.b)
+            d_broadcast = np.full(input_vector_with_beta.shape, self.d)
+            converted = (result - self.c*(b_broadcast@((input_vector_with_beta-self.d)/self.c)) - self.a*(((self.crossbar.ideal_w.numpy()-self.b)/self.a)@d_broadcast) - b_broadcast@d_broadcast) / self.a*self.c
+            #                                                                  ^ should automatically broadcast,                           ^ this too
+            bools = (converted > 0).astype('int').squeeze()
+            
+            
             return ''.join(bools.astype('str'))
 
+            
+            
+            
             '''
 
 
@@ -466,7 +480,7 @@ class NaiveLSH:
         self.c = None
         self.d = None
         self.crossbar = crossbar_class(
-            memristor_model_class, memristor_params, ideal_w_with_beta, crossbar_params ####################################################### g
+            memristor_model_class, memristor_params, ideal_g_with_beta, crossbar_params ####################################################### g not w
         )
     
     def register_weights(self, weights):
