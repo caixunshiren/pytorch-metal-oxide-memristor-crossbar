@@ -408,7 +408,15 @@ class NaiveLSH:
             # print (bools)
             # print (bools.astype('str'))
             # print (bools.squeeze().astype('str'))
-            result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)
+            
+            
+            # result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)
+            result = self.crossbar.lineres_memristive_vmm(
+                v_wl_applied=torch.from_numpy(input_vector_with_beta),
+                v_bl_applied=torch.from_numpy(np.zeros_like(input_vector_with_beta)),
+            ).numpy().reshape(-1, 1)
+            
+            
             # print (input_vector_with_beta)
             # print (result)
             # print (type(result))
