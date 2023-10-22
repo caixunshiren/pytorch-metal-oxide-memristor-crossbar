@@ -376,7 +376,11 @@ class NaiveLSH:
         def generate_hash(self, input_vector):
             #input_vector_with_beta = np.vstack((input_vector, np.array([[1]])))
             input_vector_with_beta = input_vector
-            '''
+            
+            
+            
+            #### ideal vmm:
+            #'''
 
             ###bools = (self.crossbar.ideal_vmm(torch.from_numpy(input_vector_with_beta)).numpy() > 0).astype('int').squeeze()
             
@@ -392,10 +396,11 @@ class NaiveLSH:
             
             return ''.join(bools.astype('str'))
 
-            '''
-            
-            
             #'''
+            
+            
+            #### memristive vmm:
+            '''
 
 
             # bools = (self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy() > 0).astype('int')
@@ -410,11 +415,16 @@ class NaiveLSH:
             # print (bools.squeeze().astype('str'))
             
             
-            # result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)
-            result = self.crossbar.lineres_memristive_vmm(
-                v_wl_applied=torch.from_numpy(input_vector_with_beta),
-                v_bl_applied=torch.from_numpy(np.zeros_like(input_vector_with_beta)),
-            ).numpy().reshape(-1, 1)
+            
+            
+            
+            result = self.crossbar.naive_memristive_vmm(input_vector_with_beta).numpy().reshape(-1, 1)    ####### naive memeristive vmm
+            # result = self.crossbar.lineres_memristive_vmm(                                              ####### lineres memristive vmm
+            #     v_wl_applied=torch.from_numpy(input_vector_with_beta),
+            #     v_bl_applied=torch.from_numpy(np.zeros_like(input_vector_with_beta)),
+            # ).numpy().reshape(-1, 1)
+            
+            
             
             
             # print (input_vector_with_beta)
@@ -445,7 +455,7 @@ class NaiveLSH:
             bools = (converted > 0).astype('int').squeeze()
             # print (bools)
             return ''.join(bools.astype('str'))
-            #'''
+            '''
         
         def __setitem__(self, input_vec, label):
             hash_value = self.generate_hash(input_vec)
